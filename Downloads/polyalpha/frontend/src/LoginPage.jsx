@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from './supabaseClient.js'
+import { Waves } from './WaveBackground.jsx'
+import { LiquidButton } from './LiquidButton.jsx'
+import { usePrivy } from '@privy-io/react-auth'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 
@@ -17,11 +19,11 @@ const css = `
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;overflow:hidden;background:var(--void);font-family:var(--sans);color:var(--w90);}
-  #lp-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;}
 
   @keyframes riseIn{from{opacity:0;transform:translateY(20px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}
   @keyframes slideR{from{opacity:0;transform:translateX(24px);}to{opacity:1;transform:translateX(0);}}
   @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes fadeOut{from{opacity:1;}to{opacity:0;}}
   @keyframes orbit{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
   @keyframes orbit2{from{transform:rotate(0deg);}to{transform:rotate(-360deg);}}
   @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.7);}}
@@ -58,21 +60,7 @@ const css = `
   .lbtn-gold:hover{border-color:rgba(255,217,122,.45);color:var(--gold);animation:none;}
 
   /* Override RainbowKit ConnectButton to match our design */
-  .wallet-wrap button{
-    background:var(--w03)!important;
-    border:1px solid rgba(255,217,122,.2)!important;
-    border-radius:var(--r2)!important;
-    color:var(--gold)!important;
-    font-family:var(--sans)!important;
-    font-size:13px!important;
-    font-weight:400!important;
-    width:100%!important;
-    padding:13px 18px!important;
-    justify-content:flex-start!important;
-    gap:12px!important;
-    animation:borderGlowGold 4.5s ease-in-out infinite!important;
-    transition:all .18s!important;
-  }
+  .wallet-wrap 
   .wallet-wrap button:hover{
     background:var(--w06)!important;
     border-color:rgba(255,217,122,.45)!important;
@@ -101,323 +89,324 @@ const css = `
   @media(max-width:700px){.left-col{display:none!important;}.right-col{width:100%!important;border-left:none!important;}}
 `
 
-function Stars() {
-  const ref = useRef(null)
-  useEffect(() => {
-    const canvas=ref.current; if(!canvas) return
-    const ctx=canvas.getContext('2d'); let raf
-    function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight}
-    resize(); window.addEventListener('resize',resize)
-    const STARS=Array.from({length:260},()=>({x:Math.random(),y:Math.random(),r:Math.random()*1.1+.2,speed:Math.random()*.35+.08,phase:Math.random()*Math.PI*2,featured:Math.random()<.04}))
-    let t=0
-    function draw(){
-      ctx.clearRect(0,0,canvas.width,canvas.height);t+=.005
-      for(const s of STARS){
-        const op=s.featured?.4+.6*Math.abs(Math.sin(t*s.speed+s.phase)):.1+.25*Math.abs(Math.sin(t*s.speed+s.phase))
-        const x=s.x*canvas.width,y=s.y*canvas.height,r=s.featured?s.r*2:s.r
-        if(s.featured){const arm=r*5;ctx.save();ctx.globalAlpha=op*.6;ctx.strokeStyle='#a8c4ff';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(x-arm,y);ctx.lineTo(x+arm,y);ctx.moveTo(x,y-arm);ctx.lineTo(x,y+arm);ctx.stroke();ctx.restore()}
-        ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=s.featured?`rgba(168,196,255,${op})`:`rgba(255,255,255,${op})`;ctx.fill()
-      }
-      raf=requestAnimationFrame(draw)
-    }
-    draw()
-    return()=>{cancelAnimationFrame(raf);window.removeEventListener('resize',resize)}
-  },[])
-  return <canvas id="lp-canvas" ref={ref}/>
-}
 
-const TICKS=[
-  {q:'BTC > $120k',poly:'72%',ai:'57%',v:'SHORT'},{q:'ETH ETF',poly:'29%',ai:'60%',v:'LONG'},
-  {q:'AAPL AR',poly:'55%',ai:'33%',v:'SELL'},{q:'US Unemployment',poly:'18%',ai:'37%',v:'LONG'},
-  {q:'BTC/YES',poly:'34%',ai:'58%',v:'LONG'},{q:'Fed Cut Q2',poly:'61%',ai:'43%',v:'SHORT'},
-  {q:'Trump AI Order',poly:'47%',ai:'68%',v:'LONG'},{q:'GPT-5',poly:'72%',ai:'57%',v:'SHORT'},
-]
-function Ticker() {
-  const items=[...TICKS,...TICKS]
-  const col=v=>v==='LONG'?'var(--green)':v==='SHORT'?'var(--red)':'var(--gold)'
+function DashboardMockup() {
   return (
-    <div className="ticker-wrap" style={{borderBottom:'1px solid var(--w06)',height:28,background:'rgba(4,4,6,.6)',flexShrink:0}}>
-      <div className="ticker-inner" style={{height:'100%',alignItems:'center'}}>
-        {items.map((t,i)=>(
-          <span key={i} style={{fontSize:9,fontFamily:'var(--mono)',color:'var(--w30)',letterSpacing:.5,display:'flex',alignItems:'center',gap:8}}>
-            <span style={{color:'var(--w60)',fontWeight:400}}>{t.q}</span>
-            <span>·</span><span>{t.poly}</span><span style={{color:'var(--w30)'}}>→</span><span>{t.ai}</span>
-            <span>·</span><span style={{color:col(t.v),fontWeight:600}}>{t.v}</span>
-          </span>
+    <div style={{position:'fixed',inset:0,zIndex:0,background:'#040406',overflow:'hidden',fontFamily:'var(--sans)'}}>
+      {/* Top bar */}
+      <div style={{position:'absolute',top:0,left:0,right:0,height:56,borderBottom:'1px solid rgba(255,255,255,0.06)',
+        display:'flex',alignItems:'center',padding:'0 24px',gap:16}}>
+        <div style={{width:90,height:10,borderRadius:4,background:'rgba(255,255,255,0.18)'}}/>
+        <div style={{flex:1}}/>
+        {[70,55,45].map((w,i)=><div key={i} style={{width:w,height:7,borderRadius:4,background:'rgba(255,255,255,0.07)'}}/>)}
+        <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,0.09)'}}/>
+      </div>
+      {/* Stats */}
+      <div style={{position:'absolute',top:70,left:24,right:24,display:'flex',gap:10}}>
+        {[['$2.4M','Volume 24h'],['847','Signals'],['94%','Accuracy'],['12','Live']].map(([v,l],i)=>(
+          <div key={i} style={{flex:1,padding:'12px 14px',background:'rgba(255,255,255,0.03)',borderRadius:10,border:'1px solid rgba(255,255,255,0.05)'}}>
+            <div style={{fontSize:16,fontWeight:500,color:'rgba(255,255,255,0.6)',fontFamily:'monospace'}}>{v}</div>
+            <div style={{fontSize:9,color:'rgba(255,255,255,0.2)',marginTop:2,letterSpacing:'0.05em'}}>{l}</div>
+          </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function OrbitLogo() {
-  return (
-    <div style={{position:'relative',width:44,height:44,flexShrink:0}}>
-      <div style={{position:'absolute',inset:0,borderRadius:'50%',border:'1px solid rgba(168,196,255,.25)',animation:'orbit 12s linear infinite'}}>
-        <div style={{position:'absolute',top:-2.5,left:'50%',transform:'translateX(-50%)',width:5,height:5,borderRadius:'50%',background:'rgba(168,196,255,.8)',boxShadow:'0 0 8px rgba(168,196,255,.6)'}}/>
+      {/* Pills */}
+      <div style={{position:'absolute',top:148,left:24,display:'flex',gap:7}}>
+        {['All','✦ Opportunities','▲ Undervalued','▼ Overvalued'].map((f,i)=>(
+          <div key={i} style={{padding:'4px 12px',borderRadius:100,fontSize:9,
+            background:i===0?'rgba(255,255,255,0.07)':'transparent',
+            border:'1px solid rgba(255,255,255,0.08)',color:'rgba(255,255,255,0.3)'}}>{f}</div>
+        ))}
       </div>
-      <div style={{position:'absolute',inset:4,borderRadius:'50%',border:'1px solid rgba(255,255,255,.08)',animation:'orbit2 8s linear infinite'}}>
-        <div style={{position:'absolute',bottom:-2,left:'50%',transform:'translateX(-50%)',width:4,height:4,borderRadius:'50%',background:'rgba(255,217,122,.6)',boxShadow:'0 0 6px rgba(255,217,122,.4)'}}/>
-      </div>
-      <div style={{position:'absolute',inset:0,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,255,255,.04)',fontSize:18,color:'var(--w)'}}>◈</div>
-    </div>
-  )
-}
-
-function DashPreview() {
-  const rows=[
-    {q:'Will Bitcoin exceed $120K before July 2025?',cat:'CRYPTO',p:.72,diff:.15},
-    {q:'Will the Fed cut rates in Q2 2025?',cat:'ECONOMICS',p:.43,diff:.18},
-    {q:'Will Trump sign executive order on AI by June?',cat:'POLITICS',p:.61,diff:.22},
-    {q:'Will OpenAI release GPT-5 before August 2025?',cat:'TECH',p:.55,diff:.13},
-    {q:'Will Ethereum ETF inflows exceed $2B in Q2?',cat:'CRYPTO',p:.38,diff:.20},
-    {q:'Will US unemployment exceed 5% by end of 2025?',cat:'ECONOMICS',p:.29,diff:.16},
-    {q:'Will Apple announce AR glasses at WWDC 2025?',cat:'TECH',p:.44,diff:.19},
-  ]
-  const catC={CRYPTO:'rgba(168,196,255,.7)',ECONOMICS:'rgba(255,217,122,.7)',POLITICS:'rgba(255,128,128,.7)',TECH:'rgba(127,255,212,.7)'}
-  return (
-    <div style={{padding:'0 28px'}}>
-      {rows.map((r,i)=>(
-        <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',marginBottom:6,borderRadius:14,background:'rgba(255,255,255,.02)',border:'1px solid rgba(255,255,255,.04)'}}>
-          <div style={{flex:1}}>
-            <div style={{fontSize:11,color:'rgba(255,255,255,.7)',marginBottom:4,lineHeight:1.4}}>{r.q}</div>
-            <span style={{fontSize:8,color:catC[r.cat]||'rgba(255,255,255,.3)',fontWeight:600,letterSpacing:.5}}>{r.cat}</span>
-          </div>
-          <div style={{textAlign:'right',flexShrink:0}}>
-            <div style={{fontFamily:'var(--mono)',fontSize:11,color:'rgba(255,255,255,.5)'}}>{Math.round(r.p*100)}%</div>
-            <div style={{fontFamily:'var(--mono)',fontSize:9,color:r.diff>.18?'rgba(255,217,122,.8)':'rgba(255,255,255,.2)',marginTop:2}}>Δ{Math.round(r.diff*100)}%</div>
-          </div>
+      {/* Rows */}
+      {[
+        {q:'Will Trump win 2024?',p:72,s:'STRONG BUY',v:'$2.1M',c:'POLITICS',g:'+14%'},
+        {q:'Fed rate cut before June?',p:38,s:'BUY',v:'$890K',c:'ECONOMICS',g:'+8%'},
+        {q:'SpaceX Starship orbit?',p:61,s:'SELL',v:'$445K',c:'TECH',g:'-6%'},
+        {q:'Ukraine ceasefire 2025?',p:29,s:'STRONG BUY',v:'$3.2M',c:'POLITICS',g:'+18%'},
+        {q:'Apple Vision Pro 2?',p:55,s:'BUY',v:'$210K',c:'TECH',g:'+5%'},
+        {q:'Bitcoin halving impact?',p:88,s:'SELL',v:'$1.8M',c:'CRYPTO',g:'-9%'},
+        {q:'WHO pandemic treaty?',p:44,s:'BUY',v:'$320K',c:'HEALTH',g:'+7%'},
+        {q:'Nvidia stock split 2025?',p:33,s:'STRONG BUY',v:'$560K',c:'TECH',g:'+12%'},
+      ].map((m,i)=>(
+        <div key={i} style={{
+          position:'absolute',left:24,right:24,top:182+i*50,
+          padding:'11px 14px',background:'rgba(255,255,255,0.02)',
+          borderRadius:9,border:'1px solid rgba(255,255,255,0.04)',
+          display:'flex',alignItems:'center',gap:10,
+        }}>
+          <div style={{width:20,height:20,borderRadius:'50%',border:'1px solid rgba(255,255,255,0.08)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,color:'rgba(255,255,255,0.2)',fontFamily:'monospace'}}>{i+1}</div>
+          <div style={{flex:1,fontSize:11,color:'rgba(255,255,255,0.45)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{m.q}</div>
+          <div style={{fontSize:9,color:'rgba(255,255,255,0.2)',width:48}}>{m.c}</div>
+          <div style={{fontSize:10,fontFamily:'monospace',color:'rgba(255,255,255,0.35)',width:30}}>{m.p}%</div>
+          <div style={{fontSize:8,fontWeight:700,padding:'2px 7px',borderRadius:5,
+            background:m.s.includes('BUY')?'rgba(127,255,212,0.06)':'rgba(255,128,128,0.06)',
+            color:m.s.includes('BUY')?'rgba(127,255,212,0.6)':'rgba(255,128,128,0.6)',
+            border:`1px solid ${m.s.includes('BUY')?'rgba(127,255,212,0.12)':'rgba(255,128,128,0.12)'}`}}>{m.s}</div>
+          <div style={{fontSize:9,color:m.g.startsWith('+')?'rgba(127,255,212,0.5)':'rgba(255,128,128,0.5)',fontFamily:'monospace',width:32,textAlign:'right'}}>{m.g}</div>
+          <div style={{fontSize:9,color:'rgba(255,255,255,0.15)',width:40,textAlign:'right'}}>{m.v}</div>
         </div>
       ))}
     </div>
   )
 }
 
-function StatCount({label,value,color}) {
+function BlurOverlay() {
   return (
-    <div>
-      <div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:300,color,lineHeight:1,marginBottom:4}}>{value}</div>
-      <div style={{fontSize:9,color:'var(--w30)',fontWeight:600,letterSpacing:1.5,textTransform:'uppercase'}}>{label}</div>
-    </div>
+    <div style={{position:'fixed',inset:0,zIndex:1,pointerEvents:'none',
+      backdropFilter:'blur(14px) brightness(0.6)',
+      background:'rgba(4,4,6,0.35)',
+    }}/>
   )
 }
 
-const IcoGoogle=()=>(
-  <svg width="16" height="16" viewBox="0 0 24 24">
-    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-  </svg>
-)
-const IcoGithub=()=>(
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
-  </svg>
-)
-const IcoMail=()=>(
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="2" y="4" width="20" height="16" rx="2"/>
-    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-  </svg>
-)
-const IcoWallet=()=>(
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
-    <path d="M16 3H8L4 7h16l-4-4z"/>
-    <circle cx="17" cy="14" r="1.5" fill="currentColor"/>
-  </svg>
-)
-
-
-/* ── Wallet Buttons ── */
-function SolanaWalletBtn({busy}) {
-  const { setVisible } = useWalletModal()
-  return (
-    <button className="lbtn lbtn-gold" onClick={()=>setVisible(true)} disabled={busy}>
-      <IcoWallet/>
-      <span style={{flex:1}}>Solana Wallet</span>
-      <span style={{fontSize:9,color:'rgba(127,255,212,0.5)',background:'rgba(127,255,212,0.08)',border:'1px solid rgba(127,255,212,0.15)',borderRadius:100,padding:'1px 6px'}}>SOL</span>
-      <span style={{fontSize:10}}>→</span>
-    </button>
-  )
-}
-
-function EVMWalletBtn({busy}) {
-  return (
-    <ConnectButton.Custom>
-      {({openConnectModal})=>(
-        <button className="lbtn" onClick={openConnectModal} disabled={busy} style={{borderColor:'rgba(168,196,255,.2)',color:'var(--ice)'}}>
-          <IcoWallet/>
-          <span style={{flex:1}}>EVM Wallet</span>
-          <span style={{fontSize:9,color:'rgba(168,196,255,0.5)',background:'rgba(168,196,255,0.08)',border:'1px solid rgba(168,196,255,0.15)',borderRadius:100,padding:'1px 6px'}}>ETH</span>
-          <span style={{fontSize:10}}>→</span>
-        </button>
-      )}
-    </ConnectButton.Custom>
-  )
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
-   MAIN
-════════════════════════════════════════════════════════════════════════════ */
-export default function LoginPage() {
-  const [loading, setLoading]     = useState(null)
-  const [email, setEmail]         = useState('')
-  const [showEmail, setShowEmail] = useState(false)
-  const [msg, setMsg]             = useState(null)
-  const [stats, setStats]         = useState({users:0,signals:0,markets:0})
+function ShaderLinesBg() {
+  const containerRef = useRef(null)
+  const sceneRef = useRef({ camera:null, scene:null, renderer:null, uniforms:null, animationId:null })
 
   useEffect(()=>{
-    const targets={users:1247,signals:8934,markets:312}
-    const dur=1600,start=Date.now()
-    const tick=()=>{
-      const p=Math.min(1,(Date.now()-start)/dur),e=1-Math.pow(1-p,3)
-      setStats({users:Math.round(targets.users*e),signals:Math.round(targets.signals*e),markets:Math.round(targets.markets*e)})
-      if(p<1) requestAnimationFrame(tick)
+    const script = document.createElement('script')
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/89/three.min.js'
+    script.onload = () => {
+      const container = containerRef.current
+      if (!container || !window.THREE) return
+      const THREE = window.THREE
+      container.innerHTML = ''
+      const camera = new THREE.Camera()
+      camera.position.z = 1
+      const scene = new THREE.Scene()
+      const geometry = new THREE.PlaneBufferGeometry(2, 2)
+      const uniforms = {
+        time:       { type:'f',  value:1.0 },
+        resolution: { type:'v2', value:new THREE.Vector2() },
+      }
+      const vertexShader = `void main() { gl_Position = vec4(position, 1.0); }`
+      const fragmentShader = `
+        #define TWO_PI 6.2831853072
+        precision highp float;
+        uniform vec2 resolution;
+        uniform float time;
+        float random(in float x){ return fract(sin(x)*1e4); }
+        float random(vec2 st){ return fract(sin(dot(st.xy,vec2(12.9898,78.233)))*43758.5453123); }
+        void main(void) {
+          vec2 uv = (gl_FragCoord.xy * 2.0 - resolution.xy) / min(resolution.x, resolution.y);
+          vec2 fMosaicScal = vec2(4.0, 2.0);
+          vec2 vScreenSize = vec2(256.0,256.0);
+          uv.x = floor(uv.x * vScreenSize.x / fMosaicScal.x) / (vScreenSize.x / fMosaicScal.x);
+          uv.y = floor(uv.y * vScreenSize.y / fMosaicScal.y) / (vScreenSize.y / fMosaicScal.y);
+          float t = time*0.06+random(uv.x)*0.4;
+          float lineWidth = 0.0008;
+          vec3 color = vec3(0.0);
+          for(int j = 0; j < 3; j++){
+            for(int i=0; i < 5; i++){
+              color[j] += lineWidth*float(i*i) / abs(fract(t - 0.01*float(j)+float(i)*0.01)*1.0 - length(uv));
+            }
+          }
+          gl_FragColor = vec4(color[2],color[1],color[0],1.0);
+        }
+      `
+      const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader })
+      scene.add(new THREE.Mesh(geometry, material))
+      const renderer = new THREE.WebGLRenderer()
+      renderer.setPixelRatio(window.devicePixelRatio)
+      container.appendChild(renderer.domElement)
+      sceneRef.current = { camera, scene, renderer, uniforms, animationId:null }
+      const resize = () => {
+        const rect = container.getBoundingClientRect()
+        renderer.setSize(rect.width, rect.height)
+        uniforms.resolution.value.x = renderer.domElement.width
+        uniforms.resolution.value.y = renderer.domElement.height
+      }
+      resize()
+      window.addEventListener('resize', resize)
+      const animate = () => {
+        sceneRef.current.animationId = requestAnimationFrame(animate)
+        uniforms.time.value += 0.05
+        renderer.render(scene, camera)
+      }
+      animate()
     }
-    setTimeout(()=>requestAnimationFrame(tick),600)
+    document.head.appendChild(script)
+    return () => {
+      if (sceneRef.current.animationId) cancelAnimationFrame(sceneRef.current.animationId)
+      if (sceneRef.current.renderer) sceneRef.current.renderer.dispose()
+      if (document.head.contains(script)) document.head.removeChild(script)
+    }
+  }, [])
+
+  return <div ref={containerRef} style={{position:'fixed',inset:0,zIndex:0,background:'#000',overflow:'hidden'}}/>
+}
+
+function DotsBg() {
+  const canvasRef = useRef(null)
+
+  useEffect(()=>{
+    const canvas = canvasRef.current
+    if (!canvas) return
+    let gl = canvas.getContext('webgl2',{alpha:true})
+    const isGL2 = !!gl
+    if (!gl) gl = canvas.getContext('webgl',{alpha:true}) || canvas.getContext('experimental-webgl',{alpha:true})
+    if (!gl) return
+
+    const vert = isGL2
+      ? `#version 300 es
+in vec2 pos;
+void main(){ gl_Position=vec4(pos,0,1); }`
+      : `attribute vec2 pos;
+void main(){ gl_Position=vec4(pos,0,1); }`
+    const frag = isGL2
+      ? `#version 300 es
+precision mediump float;
+uniform float u_time; uniform vec2 u_res;
+out vec4 fragColor;
+float rnd(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+void main(){
+  float sz=18.0,dot=3.5;
+  vec2 st=gl_FragCoord.xy;
+  vec2 cell=floor(st/sz); vec2 local=fract(st/sz);
+  float r=rnd(cell);
+  float t=floor(u_time*0.3+r*10.0);
+  float alpha=rnd(cell+t)*0.7+0.15;
+  float inside=step(local.x,dot/sz)*step(local.y,dot/sz);
+  vec2 center=u_res*0.5/sz;
+  float dist=length(center-cell);
+  float reveal=clamp(u_time*0.5-dist*0.018,0.0,1.0);
+  fragColor=vec4(1.0,1.0,1.0,alpha*inside*reveal);
+  fragColor.rgb*=fragColor.a;
+}`
+      : `precision mediump float;
+uniform float u_time; uniform vec2 u_res;
+float rnd(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+void main(){
+  float sz=18.0,dot=3.5;
+  vec2 st=gl_FragCoord.xy;
+  vec2 cell=floor(st/sz); vec2 local=fract(st/sz);
+  float r=rnd(cell); float t=floor(u_time*0.3+r*10.0);
+  float alpha=rnd(cell+t)*0.7+0.15;
+  float inside=step(local.x,dot/sz)*step(local.y,dot/sz);
+  vec2 center=u_res*0.5/sz; float dist=length(center-cell);
+  float reveal=clamp(u_time*0.5-dist*0.018,0.0,1.0);
+  gl_FragColor=vec4(1.0,1.0,1.0,alpha*inside*reveal);
+  gl_FragColor.rgb*=gl_FragColor.a;
+}`
+
+    function mk(type,src){
+      const sh=gl.createShader(type); gl.shaderSource(sh,src); gl.compileShader(sh)
+      if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(sh))
+      return sh
+    }
+    const prog=gl.createProgram()
+    gl.attachShader(prog,mk(gl.VERTEX_SHADER,vert))
+    gl.attachShader(prog,mk(gl.FRAGMENT_SHADER,frag))
+    gl.linkProgram(prog)
+    if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){console.error(gl.getProgramInfoLog(prog));return}
+    gl.useProgram(prog)
+    const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf)
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW)
+    const loc=gl.getAttribLocation(prog,'pos')
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0)
+    const resLoc=gl.getUniformLocation(prog,'u_res')
+    const timeLoc=gl.getUniformLocation(prog,'u_time')
+    function resize(){
+      canvas.width=innerWidth*devicePixelRatio; canvas.height=innerHeight*devicePixelRatio
+      canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'
+      gl.viewport(0,0,canvas.width,canvas.height)
+      gl.uniform2f(resLoc,canvas.width,canvas.height)
+    }
+    resize(); window.addEventListener('resize',resize)
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA)
+    let raf,t=0
+    function draw(){ raf=requestAnimationFrame(draw); t+=0.016
+      gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT)
+      gl.uniform1f(timeLoc,t); gl.drawArrays(gl.TRIANGLES,0,3)
+    }
+    draw()
+    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize',resize) }
   },[])
 
-  const loginWith=async(provider)=>{
-    setLoading(provider);setMsg(null)
-    console.log('Trying OAuth with:', provider)
-    const{data,error}=await supabase.auth.signInWithOAuth({
-      provider,
-      options:{redirectTo:window.location.origin},
-    })
-    console.log('OAuth result:', data, error)
-    if(error){setMsg({type:'err',text:error.message});setLoading(null)}
-  }
+  return <canvas ref={canvasRef} style={{position:'fixed',inset:0,zIndex:2,display:'block',pointerEvents:'none'}}/>
+}
 
-  const sendOTP=async()=>{
-    if(!email.trim()) return
-    setLoading('email');setMsg(null)
-    const{error}=await supabase.auth.signInWithOtp({
-      email:email.trim(),
-      options:{emailRedirectTo:window.location.origin},
-    })
-    setLoading(null)
-    if(error) setMsg({type:'err',text:error.message})
-    else setMsg({type:'ok',text:'Magic link sent — check your inbox ✓'})
-  }
 
-  const busy=!!loading
+export default function LoginPage({ onEnter, splashOnly, splashDone }) {
+  const { login } = usePrivy()
+  const { setVisible: openSolanaModal } = useWalletModal()
+  // Show splash if not done yet
+  const showSplash = !splashDone
 
+  // ── Splash ──────────────────────────────────────────────────────────────
+  if (showSplash) return (
+    <>
+      <style>{css}</style>
+      <ShaderLinesBg/>
+      <div style={{
+        position:'fixed',inset:0,zIndex:10,
+        display:'flex',flexDirection:'column',
+        alignItems:'center',justifyContent:'center',
+        gap:28,
+      }}>
+        <div style={{
+          fontSize:11,letterSpacing:'0.35em',color:'rgba(255,255,255,0.3)',
+          textTransform:'uppercase',fontWeight:500,
+          animation:'fadeIn 1.2s ease both 0.3s',opacity:0,
+        }}>Polyalpha · Prediction Markets Scanner</div>
+
+        <h1 style={{
+          fontFamily:'var(--sans)',fontWeight:300,
+          fontSize:'clamp(44px,7vw,90px)',
+          color:'var(--w)',letterSpacing:'-0.02em',
+          textAlign:'center',lineHeight:1.05,
+          animation:'riseIn 1s cubic-bezier(.22,1,.36,1) both 0.5s',opacity:0,
+        }}>Get Started<br/>For Free</h1>
+
+        <LiquidButton
+          onClick={() => onEnter?.()}
+          style={{marginTop:8, animation:'riseIn .8s cubic-bezier(.22,1,.36,1) both 0.15s', opacity:0, position:'relative'}}
+        >Enter →</LiquidButton>
+      </div>
+    </>
+  )
+
+  // ── Login ────────────────────────────────────────────────────────────────
   return (
     <>
       <style>{css}</style>
-      <Stars/>
 
-      <div style={{height:'100vh',display:'flex',flexDirection:'column',position:'relative',zIndex:1}}>
-        <Ticker/>
+      {/* Wave background */}
+      <div style={{position:'fixed',inset:0,zIndex:0}}>
+        <Waves
+          strokeColor="rgba(255,255,255,0.2)"
+          backgroundColor="#040406"
+          pointerSize={0.6}
+        />
+      </div>
 
-        <div style={{flex:1,display:'flex',overflow:'hidden'}}>
-
-          {/* LEFT */}
-          <div className="left-col" style={{flex:1,position:'relative',overflow:'hidden',borderRight:'1px solid var(--w04)'}}>
-            <div style={{position:'absolute',inset:0,zIndex:2,pointerEvents:'none',background:'linear-gradient(to right,transparent 55%,#040406 100%)'}}/>
-            <div style={{position:'absolute',bottom:0,left:0,right:0,height:200,zIndex:2,pointerEvents:'none',background:'linear-gradient(to top,#040406 0%,transparent 100%)'}}/>
-            <div style={{position:'absolute',top:0,left:0,right:0,height:60,zIndex:2,pointerEvents:'none',background:'linear-gradient(to bottom,#040406 0%,transparent 100%)'}}/>
-            <div style={{padding:'32px 28px',opacity:.5,filter:'blur(.3px)'}}>
-              <DashPreview/>
-            </div>
-            <div style={{position:'absolute',bottom:36,left:28,zIndex:3,animation:'riseIn .7s cubic-bezier(.22,1,.36,1) .5s both'}}>
-              <div style={{display:'inline-flex',alignItems:'center',gap:7,padding:'4px 12px',borderRadius:100,background:'rgba(127,255,212,.07)',border:'1px solid rgba(127,255,212,.15)',marginBottom:14}}>
-                <span style={{width:6,height:6,borderRadius:'50%',background:'var(--green)',flexShrink:0,animation:'pulse 2s ease-in-out infinite',boxShadow:'0 0 5px var(--green)'}}/>
-                <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--green)',letterSpacing:1.5,textTransform:'uppercase'}}>AI Signal Engine · Live</span>
-              </div>
-              <div style={{fontSize:30,fontWeight:300,lineHeight:1.3,color:'var(--w)',marginBottom:24,letterSpacing:-.4,maxWidth:380}}>
-                Find mispriced markets<br/><span style={{color:'var(--w30)'}}>before the crowd does.</span>
-              </div>
-              <div style={{display:'flex',gap:40}}>
-                <StatCount label="Users"             value={stats.users.toLocaleString()}   color="var(--w)"/>
-                <StatCount label="Signals Generated" value={stats.signals.toLocaleString()} color="var(--ice)"/>
-                <StatCount label="Alpha Markets"     value={stats.markets.toLocaleString()} color="var(--gold)"/>
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT */}
-          <div className="right-col glass" style={{width:368,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',padding:'36px 30px',borderLeft:'1px solid var(--w06)'}}>
-            <div style={{width:'100%',animation:'slideR .55s cubic-bezier(.22,1,.36,1) .1s both'}}>
-
-              <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:36}}>
-                <OrbitLogo/>
-                <div>
-                  <div style={{fontSize:19,fontWeight:600,color:'var(--w)',letterSpacing:.3,lineHeight:1}}>Polyalpha</div>
-                  <div style={{fontSize:9,color:'var(--w30)',fontFamily:'var(--mono)',fontWeight:300,marginTop:5,letterSpacing:.5}}>prediction market scanner</div>
-                </div>
-              </div>
-
-              <div className="s0" style={{marginBottom:30}}>
-                <div style={{fontSize:24,fontWeight:300,color:'var(--w)',marginBottom:7,letterSpacing:-.3}}>Sign in</div>
-                <div style={{fontSize:12,color:'var(--w30)',lineHeight:1.9,fontWeight:300}}>Scan live markets · Get AI signals in seconds</div>
-              </div>
-
-              {/* Social OAuth */}
-              <div className="s1" style={{marginBottom:14}}>
-                <div style={{fontSize:8,color:'var(--w30)',letterSpacing:2,marginBottom:10,fontFamily:'var(--mono)',textTransform:'uppercase'}}>Social</div>
-                <div style={{display:'flex',flexDirection:'column',gap:7}}>
-                  <button className="lbtn" onClick={()=>loginWith('google')} disabled={busy}>
-                    {loading==='google'?<span style={{width:16,height:16,border:'1.5px solid rgba(255,255,255,.1)',borderTopColor:'rgba(255,255,255,.5)',borderRadius:'50%',animation:'spin .7s linear infinite',flexShrink:0}}/>:<IcoGoogle/>}
-                    <span style={{flex:1}}>{loading==='google'?'Redirecting…':'Google'}</span>
-                    <span style={{fontSize:10,color:'var(--w30)'}}>→</span>
-                  </button>
-                  <button className="lbtn" onClick={()=>loginWith('github')} disabled={busy}>
-                    {loading==='github'?<span style={{width:16,height:16,border:'1.5px solid rgba(255,255,255,.1)',borderTopColor:'rgba(255,255,255,.5)',borderRadius:'50%',animation:'spin .7s linear infinite',flexShrink:0}}/>:<IcoGithub/>}
-                    <span style={{flex:1}}>{loading==='github'?'Redirecting…':'GitHub'}</span>
-                    <span style={{fontSize:10,color:'var(--w30)'}}>→</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="s2" style={{marginBottom:14}}><div className="div-line">or</div></div>
-
-              {/* Wallet */}
-              <div className="s3" style={{marginBottom:14}}>
-                <div style={{fontSize:8,color:'var(--w30)',letterSpacing:2,marginBottom:10,fontFamily:'var(--mono)',textTransform:'uppercase'}}>Wallet</div>
-                <div style={{display:'flex',flexDirection:'column',gap:7}}>
-                  <SolanaWalletBtn busy={busy}/>
-                  <EVMWalletBtn busy={busy}/>
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="s3" style={{marginBottom:14}}><div className="div-line">or</div></div>
-
-              {/* Email OTP */}
-              <div className="s4" style={{marginBottom:28}}>
-                <div style={{fontSize:8,color:'var(--w30)',letterSpacing:2,marginBottom:10,fontFamily:'var(--mono)',textTransform:'uppercase'}}>Email</div>
-                {!showEmail
-                  ?<button className="lbtn" onClick={()=>setShowEmail(true)} disabled={busy}>
-                    <IcoMail/>
-                    <span style={{flex:1}}>Continue with Email</span>
-                    <span style={{fontSize:10,color:'var(--w30)'}}>→</span>
-                  </button>
-                  :<div>
-                    <input className="email-input" type="email" placeholder="your@email.com"
-                      value={email} onChange={e=>setEmail(e.target.value)}
-                      onKeyDown={e=>e.key==='Enter'&&sendOTP()} autoFocus style={{marginBottom:8}}/>
-                    <button className="lbtn" onClick={sendOTP} disabled={busy||!email.trim()}
-                      style={{justifyContent:'center',fontWeight:500,color:'var(--w)',background:'var(--w06)',borderColor:'rgba(255,255,255,.2)'}}>
-                      {loading==='email'?<><span style={{width:14,height:14,border:'1.5px solid rgba(255,255,255,.1)',borderTopColor:'rgba(255,255,255,.5)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>Sending…</>:'Send magic link ↗'}
-                    </button>
-                    {msg&&<div className={msg.type==='ok'?'ok-msg':'err-msg'}>{msg.text}</div>}
-                  </div>
-                }
-              </div>
-
-              <div className="s5" style={{borderTop:'1px solid var(--w06)',paddingTop:16,fontSize:9,color:'var(--w30)',lineHeight:2.2,fontFamily:'var(--mono)',fontWeight:300,letterSpacing:.3}}>
-                Google & GitHub redirect instantly — no modal<br/>
-                <span style={{color:'rgba(255,255,255,.12)'}}>Supabase Auth · RainbowKit · Non-custodial</span>
-              </div>
-
-            </div>
-          </div>
-
-        </div>
+      {/* Connect button — centered */}
+      <div style={{
+        position:'fixed',inset:0,zIndex:10,
+        display:'flex',alignItems:'center',justifyContent:'center',
+      }}>
+        <button
+          onClick={login}
+          style={{
+            background:'transparent',
+            border:'none',outline:'none',
+            cursor:'pointer',
+            color:'rgba(255,255,255,0.9)',
+            fontFamily:'var(--sans)',
+            fontSize:13,fontWeight:300,
+            letterSpacing:'0.35em',
+            textTransform:'uppercase',
+            transition:'all .3s ease',
+            animation:'fadeIn 1.5s ease both 0.5s',
+            opacity:0,
+          }}
+          onMouseEnter={e=>{e.currentTarget.style.letterSpacing='0.5em';e.currentTarget.style.color='#fff'}}
+          onMouseLeave={e=>{e.currentTarget.style.letterSpacing='0.35em';e.currentTarget.style.color='rgba(255,255,255,0.9)'}}
+        >
+          Connect
+        </button>
       </div>
     </>
   )

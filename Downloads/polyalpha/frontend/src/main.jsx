@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { PrivyProvider } from '@privy-io/react-auth'
 
 // EVM — RainbowKit + Wagmi
 import { WagmiProvider } from 'wagmi'
@@ -30,23 +31,34 @@ const solanaWallets = [
 ]
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <ConnectionProvider endpoint={solanaNetwork}>
-    <WalletProvider wallets={solanaWallets} autoConnect>
-      <WalletModalProvider>
-        <WagmiProvider config={wagmiConfig}>
-          <QueryClientProvider client={queryClient}>
-            <RainbowKitProvider theme={darkTheme({
-              accentColor: '#ffffff',
-              accentColorForeground: '#040406',
-              borderRadius: 'large',
-              fontStack: 'system',
-              overlayBlur: 'large',
-            })}>
-              <AuthGate />
-            </RainbowKitProvider>
-          </QueryClientProvider>
-        </WagmiProvider>
-      </WalletModalProvider>
-    </WalletProvider>
-  </ConnectionProvider>
+  <PrivyProvider
+    appId="cmmgt6j5d02wz0bldoajtnst9"
+    config={{
+      appearance: {
+        theme: 'dark',
+        accentColor: '#ffffff',
+      },
+      embeddedWallets: { createOnLogin: 'off' },
+    }}
+  >
+    <ConnectionProvider endpoint={solanaNetwork}>
+      <WalletProvider wallets={solanaWallets} autoConnect>
+        <WalletModalProvider>
+          <WagmiProvider config={wagmiConfig}>
+            <QueryClientProvider client={queryClient}>
+              <RainbowKitProvider theme={darkTheme({
+                accentColor: '#ffffff',
+                accentColorForeground: '#040406',
+                borderRadius: 'large',
+                fontStack: 'system',
+                overlayBlur: 'large',
+              })}>
+                <AuthGate />
+              </RainbowKitProvider>
+            </QueryClientProvider>
+          </WagmiProvider>
+        </WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
+  </PrivyProvider>
 )

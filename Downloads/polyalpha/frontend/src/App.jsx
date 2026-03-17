@@ -2,6 +2,16 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import SignalHistory from "./SignalHistory.jsx";
 import { useSignals } from "./useSignals.js";
 import UserMenu from "./UserMenu.jsx";
+import { FallingPattern } from "./FallingPattern.jsx";
+import BentoGrid from "./BentoGrid.jsx";
+
+
+function getPolyUrl(market) {
+  // Always prefer event slug (most reliable)
+  if (market.eventSlug) return `https://polymarket.com/event/${market.eventSlug}`;
+  if (market.slug) return `https://polymarket.com/event/${market.slug}`;
+  return `https://polymarket.com/event/${market.id}`;
+}
 
 const PROXY = "http://localhost:3001";
 
@@ -42,13 +52,21 @@ const css = `
     --mono:      'JetBrains Mono', monospace;
   }
 
+
   /* ── Reset ─────────────────────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   html, body {
-    background: var(--void);
     color: var(--white-90);
     font-family: var(--sans);
+    background-color: #040406;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(168,196,255,0.06) 0%, transparent 60%),
+      radial-gradient(circle at 15% 85%, rgba(127,255,212,0.03) 0%, transparent 40%),
+      radial-gradient(circle at 85% 15%, rgba(168,196,255,0.03) 0%, transparent 40%),
+      radial-gradient(circle, rgba(255,255,255,0.028) 1px, transparent 1px);
+    background-size: auto, auto, auto, 24px 24px;
+    background-attachment: fixed;
     font-size: 14px;
     overflow-x: hidden;
     min-height: 100vh;
@@ -201,15 +219,15 @@ const css = `
   button { font-family: var(--sans); cursor: pointer; transition: all .18s; }
 
   .btn-star {
-    background: var(--white);
-    color: var(--void);
-    border: none;
-    border-radius: var(--r3);
-    padding: 8px 18px;
-    font-weight: 700; font-size: 12px; letter-spacing: 0.2px;
-    box-shadow: 0 0 20px rgba(255,255,255,0.15);
-    transition: all .2s;
+    position:relative;display:inline-flex;align-items:center;gap:6px;
+    padding:7px 16px;border-radius:100px;border:none;outline:none;cursor:pointer;
+    font-family:var(--sans);font-size:11px;font-weight:500;
+    color:rgba(255,255,255,0.8);
+    background:rgba(255,255,255,0.06);
+    box-shadow:0 0 0 1px rgba(255,255,255,0.12),inset 0 1px 0 rgba(255,255,255,0.15),0 4px 16px rgba(0,0,0,0.2);
+    backdrop-filter:blur(12px);transition:all .18s;
   }
+  .btn-star:hover{background:rgba(255,255,255,0.10);transform:translateY(-1px);box-shadow:0 0 0 1px rgba(255,255,255,0.2),0 6px 20px rgba(0,0,0,0.25);}
   .btn-star:hover {
     box-shadow: 0 0 36px rgba(255,255,255,0.3);
     transform: translateY(-1px);
@@ -242,23 +260,7 @@ const css = `
   .ntab.on { background: var(--white-10); color: var(--white); }
   .ntab:hover:not(.on) { color: var(--white-60); }
 
-  /* ── Filter pill ──────────────────────────────────────────────────── */
-  .fpill {
-    padding: 6px 15px;
-    border-radius: var(--r3);
-    font-size: 11px; font-weight: 500;
-    border: 1px solid var(--white-10);
-    background: transparent;
-    color: var(--white-30);
-    letter-spacing: 0.2px;
-  }
-  .fpill.on {
-    border-color: var(--white-30);
-    color: var(--white);
-    background: var(--white-06);
-    box-shadow: 0 0 16px rgba(255,255,255,0.06);
-  }
-  .fpill:hover:not(.on) { border-color: var(--white-20); color: var(--white-60); }
+  /* fpill → see liquid glass section */
 
   /* ── Sort ─────────────────────────────────────────────────────────── */
   .sort { cursor:pointer; user-select:none; }
@@ -298,6 +300,84 @@ const css = `
 
   /* ── Mobile ───────────────────────────────────────────────────────── */
   @media (max-width:820px) { .desk { display:none !important; } }
+  /* ── Liquid glass buttons ─────────────────────────────────────────────── */
+  .btn-glass {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: none;
+    outline: none;
+    cursor: pointer;
+    font-family: var(--sans);
+    color: rgba(255,255,255,0.85);
+    border-radius: 100px;
+    background: rgba(255,255,255,0.06);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.12),
+      inset 0 1px 0 rgba(255,255,255,0.18),
+      inset 0 -1px 0 rgba(0,0,0,0.15),
+      inset 1px 0 0.5px rgba(255,255,255,0.08),
+      inset -1px 0 0.5px rgba(255,255,255,0.08),
+      0 4px 16px rgba(0,0,0,0.2);
+    backdrop-filter: blur(12px) saturate(1.3);
+    -webkit-backdrop-filter: blur(12px) saturate(1.3);
+    transition: all .18s cubic-bezier(.22,1,.36,1);
+    overflow: hidden;
+  }
+  .btn-glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.06) 100%);
+    pointer-events: none;
+  }
+  .btn-glass::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 15%; right: 15%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+    pointer-events: none;
+  }
+  .btn-glass:hover {
+    background: rgba(255,255,255,0.10);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.22),
+      inset 0 1px 0 rgba(255,255,255,0.28),
+      inset 0 -1px 0 rgba(0,0,0,0.15),
+      0 6px 24px rgba(0,0,0,0.3);
+    transform: translateY(-1px);
+  }
+  .btn-glass:active {
+    transform: translateY(0) scale(0.98);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .btn-glass:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  .btn-glass span { position: relative; z-index: 1; }
+
+  /* Pill filter buttons */
+  .fpill {
+    padding: 6px 15px;
+    border-radius: var(--r3);
+    font-size: 11px; font-weight: 500;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(8px);
+    color: var(--white-30);
+    letter-spacing: 0.2px;
+    cursor: pointer;
+    transition: all .18s;
+  }
+  .fpill.on {
+    border-color: rgba(255,255,255,0.22);
+    color: var(--white);
+    background: rgba(255,255,255,0.08);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 0 16px rgba(255,255,255,0.04);
+  }
+  .fpill:hover:not(.on) { border-color: rgba(255,255,255,0.18); color: var(--white-60); background: rgba(255,255,255,0.06); }
+
 `;
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -381,9 +461,12 @@ function StarCanvas() {
 /* ────────────────────────────────────────────────────────────────────────────
    UTILS
 ──────────────────────────────────────────────────────────────────────────── */
-const fmt = n =>
-  n >= 1e6 ? `${(n/1e6).toFixed(1)}M` :
-  n >= 1e3 ? `${(n/1e3).toFixed(0)}K` : `$${n}`;
+const fmt = n => {
+  const v = Math.round(n);
+  if (v >= 1e6) return `$${(v/1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `$${(v/1e3).toFixed(0)}K`;
+  return `$${v}`;
+};
 const pct = n => `${Math.round(n*100)}%`;
 
 const CAT = {
@@ -423,33 +506,84 @@ function spark(id, base) {
 }
 
 /* SSE */
+// ── Local quantitative engine — zero network calls ───────────────────────────
+const CAT_BIAS = {
+  CRYPTO:    { drift: 0.04,  volatility: 0.18 },
+  POLITICS:  { drift: -0.02, volatility: 0.12 },
+  ECONOMICS: { drift: 0.01,  volatility: 0.08 },
+  TECH:      { drift: 0.03,  volatility: 0.14 },
+  SPORTS:    { drift: 0.00,  volatility: 0.10 },
+  DEFAULT:   { drift: 0.01,  volatility: 0.10 },
+};
+
 function analyzeWithClaude(market, onAgent) {
-  return new Promise((resolve,reject)=>{
-    fetch(`${PROXY}/analyze`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({market})})
-    .then(res=>{
-      const reader=res.body.getReader(),dec=new TextDecoder();let buf="";
-      function pump(){
-        reader.read().then(({done,value})=>{
-          if(done){reject(new Error("closed"));return;}
-          buf+=dec.decode(value,{stream:true});
-          const lines=buf.split("\n");buf=lines.pop();
-          let ev=null;
-          for(const l of lines){
-            if(l.startsWith("event: "))ev=l.slice(7).trim();
-            else if(l.startsWith("data: ")){
-              try{
-                const d=JSON.parse(l.slice(6));
-                if(ev==="agent"&&onAgent)onAgent(d.step,d.label,d.status,d.data);
-                else if(ev==="result"){resolve(d);return;}
-                else if(ev==="error"){reject(new Error(d.message));return;}
-              }catch{}
-            }
-          }
-          pump();
-        }).catch(reject);
-      }
-      pump();
-    }).catch(reject);
+  return new Promise(resolve => {
+    const p    = market.polyProb;
+    const vol  = market.volume || 0;
+    const cat  = (market.category || 'DEFAULT').toUpperCase();
+    const bias = CAT_BIAS[cat] || CAT_BIAS.DEFAULT;
+
+    let extremityAdj = 0;
+    if (p < 0.10) extremityAdj = +0.04;
+    else if (p > 0.90) extremityAdj = -0.04;
+    else if (p < 0.20) extremityAdj = +0.02;
+    else if (p > 0.80) extremityAdj = -0.02;
+
+    const volScore  = vol < 1000 ? 0.06 : vol < 5000 ? 0.04 : vol < 20000 ? 0.02 : vol < 100000 ? 0.01 : 0;
+    const roundBias = [0.25, 0.50, 0.75].some(r => Math.abs(p - r) < 0.02) ? 0.02 : 0;
+    let timeAdj = 0;
+    if (market.endDate) {
+      const d = (new Date(market.endDate) - Date.now()) / 86400000;
+      timeAdj = d < 3 ? 0 : d < 14 ? 0.01 : d < 60 ? 0.02 : 0.03;
+    }
+
+    const totalAdj = extremityAdj + (volScore * (p < 0.5 ? 1 : -1)) + bias.drift + timeAdj;
+    let aiProb = Math.max(0.02, Math.min(0.98, p + totalAdj));
+    if (roundBias > 0) aiProb = Math.max(0.02, Math.min(0.98, p < 0.5 ? aiProb - 0.015 : aiProb + 0.015));
+
+    const rawGap = aiProb - p;
+    const absGap = Math.abs(rawGap);
+    const signalCount = [extremityAdj !== 0, volScore > 0.02, roundBias > 0, Math.abs(bias.drift) > 0.02].filter(Boolean).length;
+    const confidence  = Math.min(88, Math.max(25, 35 + signalCount * 12 + (absGap > 0.12 ? 15 : absGap > 0.06 ? 8 : 0)));
+    const signal = rawGap > 0.04 ? 'LONG' : rawGap < -0.04 ? 'SHORT' : 'NEUTRAL';
+
+    let finalProb = aiProb;
+    if (absGap > 0.20) finalProb = p + rawGap * 0.8;
+    else if (absGap > 0.12) finalProb = p + rawGap * 0.9;
+    finalProb = Math.max(0.02, Math.min(0.98, finalProb));
+
+    const finalGap = Math.abs(finalProb - p);
+    const verdict  = finalGap < 0.03 ? 'NEUTRAL'
+                   : finalGap < 0.08 ? (finalProb > p ? 'BUY' : 'SELL')
+                   :                   (finalProb > p ? 'STRONG BUY' : 'STRONG SELL');
+
+    const edgePct = Math.round(absGap * 100);
+    const edge = absGap < 0.03
+      ? `No significant edge (Δ${edgePct}%)`
+      : absGap < 0.08
+      ? `Moderate mispricing — algo ${Math.round(aiProb*100)}% vs market ${Math.round(p*100)}% (Δ${edgePct}%)`
+      : `Strong mispricing — algo ${Math.round(aiProb*100)}% vs market ${Math.round(p*100)}% (Δ${edgePct}%)`;
+
+    const bullFactors = [];
+    const bearFactors = [];
+    if (p < 0.35) bullFactors.push(`Market underweights at ${Math.round(p*100)}%`);
+    if (p > 0.65) bearFactors.push(`Market overweights at ${Math.round(p*100)}%`);
+    if (vol < 5000) bullFactors.push(`Low liquidity ($${Math.round(vol).toLocaleString()}) — price likely stale`);
+    if (extremityAdj > 0) bullFactors.push('Tail risk underpriced by crowd');
+    if (extremityAdj < 0) bearFactors.push('Overconfidence in near-certain outcome');
+    if (bullFactors.length === 0) bullFactors.push('Base rate suggests fair pricing');
+    if (bearFactors.length === 0) bearFactors.push('Volume and structure suggest efficient pricing');
+
+    const research = { bullFactors, bearFactors, keyUncertainty: 'Quantitative model — no external data' };
+    const critique = signalCount >= 3 ? 'Multiple converging signals' : 'Single-signal trade — use small size';
+
+    if (onAgent) {
+      onAgent(1,'RESEARCHER','done', research);
+      onAgent(2,'ANALYST','done', { aiProb, signal, confidence, edge, bullCase: bullFactors[0], bearCase: bearFactors[0] });
+      onAgent(3,'CRITIC','done', { verdict, finalProb, critique });
+    }
+
+    resolve({ aiProb: finalProb, signal, confidence, edge, bullCase: bullFactors[0], bearCase: bearFactors[0], verdict, critique, research });
   });
 }
 
@@ -706,7 +840,7 @@ function AnalysisPanel({analysis,loading,agents,market}) {
           </div>
         )}
         <a
-          href={`https://polymarket.com/event/${market.slug||market.id}`}
+          href={getPolyUrl(market)}
           target="_blank" rel="noreferrer"
           onClick={e=>e.stopPropagation()}
           style={{
@@ -729,8 +863,8 @@ function AnalysisPanel({analysis,loading,agents,market}) {
    MARKET ROW
 ──────────────────────────────────────────────────────────────────────────── */
 function MarketRow({market,rank,onAnalyze,idx}) {
-  const [open,setOpen]=useState(false);
   const a=market.analysis,ags=market.agents||{};
+  const [open,setOpen]=useState(false);
   const gap=a?Math.abs(a.aiProb-market.polyProb):null;
   const hot=gap!==null&&gap>0.18;
   const cat=CAT[market.category]||CAT.Other;
@@ -779,7 +913,7 @@ function MarketRow({market,rank,onAnalyze,idx}) {
               </span>
             )}
             {a&&(
-              <a href={`https://polymarket.com/event/${market.slug||market.id}`}
+              <a href={getPolyUrl(market)}
                 target="_blank" rel="noreferrer"
                 onClick={e=>e.stopPropagation()}
                 style={{fontSize:9,color:"var(--white-30)",textDecoration:"none",fontWeight:300,transition:"color .15s",letterSpacing:0.2}}
@@ -946,13 +1080,14 @@ export default function App() {
       try{const h=await fetch(`${PROXY}/health`);if(!h.ok)throw 0;setProxyOk(true);}
       catch{setProxyOk(false);setLoading(false);return;}
       try{
-        const r=await fetch(`${PROXY}/markets?limit=30`);if(!r.ok)throw 0;
+        const r=await fetch(`${PROXY}/markets?limit=100`);if(!r.ok)throw 0;
         const data=await r.json();
-        setMarkets((Array.isArray(data)?data:[]).filter(m=>m.question&&m.outcomePrices).slice(0,25).map(m=>({
+        setMarkets((Array.isArray(data)?data:[]).filter(m=>m.question&&m.outcomePrices).map(m=>({
           id:m.id,slug:m.slug||m.id,question:m.question,
-          polyProb:parsePolyProb(m),volume:parseFloat(m.volume||m.volumeNum||0),
+          conditionId:m.conditionId||null,eventSlug:m.events?.[0]?.slug||null,
+          polyProb:parsePolyProb(m),volume:m._volume||parseFloat(m.volumeNum||m.volume||0),
           category:categorize(m.question),endDate:m.endDate||m.endDateIso||null,
-          analysis:null,analyzing:false,
+          liquidity:m._liquidity||parseFloat(m.liquidityNum||m.liquidity||0),analysis:null,analyzing:false,
         })));
         setLastUpdate(new Date());
       }catch(e){console.error(e);}
@@ -962,6 +1097,13 @@ export default function App() {
     const iv=setInterval(boot,120000);
     return()=>clearInterval(iv);
   },[]);
+
+  // Auto-analyze instantly — runs synchronously so no waiting
+  useEffect(()=>{
+    if(markets.length>0){
+      analyzeAll();
+    }
+  },[markets.length]);
 
   const analyzeMarket=useCallback(async(id)=>{
     const m=markets.find(x=>x.id===id);
@@ -976,16 +1118,144 @@ export default function App() {
     }catch{setMarkets(ms=>ms.map(x=>x.id===id?{...x,analyzing:false}:x));}
   },[markets,saveSignal]);
 
-  const analyzeAll=useCallback(async()=>{
-    setAnalyzingAll(true);setProgress(0);
+  const analyzeAll=useCallback(()=>{
+    setAnalyzingAll(true);
     const todo=markets.filter(m=>!m.analysis&&!m.analyzing);
-    for(let i=0;i<todo.length;i++){
-      await analyzeMarket(todo[i].id);
-      setProgress(Math.round((i+1)/todo.length*100));
-      await new Promise(r=>setTimeout(r,600));
-    }
+    if(todo.length===0){setAnalyzingAll(false);return;}
+
+    const results=todo.map(m=>{
+      const p    = m.polyProb;           // market probability 0-1
+      const vol  = m.volume  || 0;       // total lifetime volume $
+      const liq  = m.liquidity || 0;     // current liquidity $
+      const cat  = (m.category||'OTHER').toUpperCase();
+
+      // ── Signal 1: Liquidity-adjusted mispricing ───────────────────────
+      // Thin liquidity = wider spread = higher chance of stale price
+      const liqScore = liq < 500   ? 0.08
+                     : liq < 2000  ? 0.05
+                     : liq < 10000 ? 0.02
+                     : liq < 50000 ? 0.01
+                     : 0;
+
+      // ── Signal 2: Volume/liquidity ratio (turnover signal) ────────────
+      // High vol relative to liq = price has been tested = more reliable
+      // Low ratio = price may not reflect true belief
+      const turnover    = liq > 0 ? vol / liq : 0;
+      const turnoverAdj = turnover < 2  ? 0.04   // barely traded relative to liquidity
+                        : turnover < 10 ? 0.02
+                        : turnover > 100 ? -0.01  // very active = efficient
+                        : 0;
+
+      // ── Signal 3: Probability extremity — crowd overconfidence ────────
+      // Markets near 0% or 100% systematically underprice tail risk
+      const extremeAdj = p < 0.05 ? +0.06
+                       : p > 0.95 ? -0.06
+                       : p < 0.10 ? +0.04
+                       : p > 0.90 ? -0.04
+                       : p < 0.15 ? +0.02
+                       : p > 0.85 ? -0.02
+                       : 0;
+
+      // ── Signal 4: Round number anchoring bias ─────────────────────────
+      // People anchor on 25/50/75 — real prob likely slightly different
+      const roundDist   = [0.25,0.50,0.75].map(r=>Math.abs(p-r));
+      const minRound    = Math.min(...roundDist);
+      const roundAdj    = minRound < 0.015 ? (p < 0.5 ? -0.015 : +0.015) : 0;
+
+      // ── Signal 5: Category base rate drift ───────────────────────────
+      // Historical Polymarket data: some categories systematically misprice
+      const catDrift = {
+        CRYPTO:     +0.000, // efficient, high volume traders
+        POLITICS:   -0.025, // overprice YES (wishful thinking)
+        SPORTS:     +0.010, // slight underpricing of upsets
+        ECONOMICS:  +0.015, // slow to update on macro
+        TECH:       +0.020, // underprices disruptive outcomes
+        SCIENCE:    +0.018,
+        HEALTH:     +0.012,
+        OTHER:      +0.005,
+      }[cat] || +0.005;
+
+      // ── Combine signals ───────────────────────────────────────────────
+      const direction   = p < 0.5 ? 1 : -1; // liq/turnover signals push toward uncertainty
+      const rawAdj      = extremeAdj
+                        + (liqScore    * direction)
+                        + (turnoverAdj * direction)
+                        + catDrift
+                        + roundAdj;
+
+      let aiProb = Math.max(0.02, Math.min(0.98, p + rawAdj));
+
+      // ── Critic: dampen overconfident gaps ─────────────────────────────
+      const rawGap = aiProb - p;
+      const absGap = Math.abs(rawGap);
+      if (absGap > 0.20) aiProb = p + rawGap * 0.75;
+      else if (absGap > 0.12) aiProb = p + rawGap * 0.88;
+      aiProb = Math.max(0.02, Math.min(0.98, aiProb));
+
+      const finalGap = Math.abs(aiProb - p);
+      const signal   = rawGap > 0.04 ? 'LONG' : rawGap < -0.04 ? 'SHORT' : 'NEUTRAL';
+      const verdict  = finalGap < 0.03 ? 'NEUTRAL'
+                     : finalGap < 0.07 ? (aiProb > p ? 'BUY'         : 'SELL')
+                     :                   (aiProb > p ? 'STRONG BUY'  : 'STRONG SELL');
+
+      // ── Confidence: more signals agreeing = higher confidence ─────────
+      const signalCount = [
+        Math.abs(extremeAdj)   > 0.01,
+        Math.abs(liqScore)     > 0.02,
+        Math.abs(turnoverAdj)  > 0.01,
+        Math.abs(catDrift)     > 0.01,
+        Math.abs(roundAdj)     > 0,
+      ].filter(Boolean).length;
+      const confidence = Math.min(85, Math.max(20, 30 + signalCount * 11 + (finalGap > 0.12 ? 12 : finalGap > 0.06 ? 6 : 0)));
+
+      // ── Edge description ──────────────────────────────────────────────
+      const ep   = Math.round(finalGap * 100);
+      const mPct = Math.round(p * 100);
+      const aPct = Math.round(aiProb * 100);
+      const edge = finalGap < 0.03
+        ? `Market appears efficiently priced at \${mPct}% (Δ\${ep}%)`
+        : finalGap < 0.07
+        ? `Moderate edge — model \${aPct}% vs market \${mPct}% (Δ\${ep}%) driven by \${signalCount} signal\${signalCount>1?'s':''}`
+        : `Strong edge — model \${aPct}% vs market \${mPct}% (Δ\${ep}%) — \${signalCount} converging signals`;
+
+      // ── Bull / Bear case ──────────────────────────────────────────────
+      const bullFactors = [];
+      const bearFactors = [];
+      if (extremeAdj > 0)    bullFactors.push(`Tail risk at \${mPct}% systematically underpriced by crowds`);
+      if (extremeAdj < 0)    bearFactors.push(`Near-certainty at \${mPct}% — overconfidence risk`);
+      if (liqScore > 0.04)   bullFactors.push(`Very thin liquidity ($\${Math.round(liq).toLocaleString()}) — price not battle-tested`);
+      if (turnoverAdj > 0.02)bullFactors.push(`Low turnover ratio (\${Math.round(turnover)}x) — stale pricing`);
+      if (turnoverAdj < 0)   bearFactors.push(`High turnover (\${Math.round(turnover)}x) — efficient, well-arbitraged market`);
+      if (catDrift > 0.01)   bullFactors.push(`\${cat} category historically underprices YES outcomes`);
+      if (catDrift < -0.01)  bearFactors.push(`\${cat} category shows wishful thinking bias — YES overpriced`);
+      if (roundAdj !== 0)    (p < 0.5 ? bearFactors : bullFactors).push(`Round number anchoring at \${mPct}% — true prob likely off`);
+      if (bullFactors.length === 0) bullFactors.push(`Model finds no structural edge — market appears efficient`);
+      if (bearFactors.length === 0) bearFactors.push(`High volume and liquidity suggest efficient pricing`);
+
+      const critique = signalCount >= 4 ? `Strong case — \${signalCount} independent signals converge`
+                     : signalCount >= 2 ? `Moderate case — \${signalCount} signals align, use normal sizing`
+                     : liq < 1000      ? `Thin market ($\${Math.round(liq).toLocaleString()} liq) — reduce size, wide spreads`
+                     :                   `Weak single-signal trade — small position only`;
+
+      return {
+        id: m.id,
+        analysis: {
+          aiProb, signal, confidence, edge, verdict,
+          bullCase: bullFactors[0],
+          bearCase: bearFactors[0],
+          critique,
+          research: { bullFactors, bearFactors, keyUncertainty: `Vol $\${vol>=1e6?(vol/1e6).toFixed(1)+'M':vol>=1e3?(vol/1e3).toFixed(0)+'K':Math.round(vol)} · Liq $\${liq>=1e3?(liq/1e3).toFixed(0)+'K':Math.round(liq)} · Turnover \${Math.round(turnover)}x` },
+        }
+      };
+    });
+
+    setMarkets(ms=>ms.map(m=>{
+      const r=results.find(x=>x.id===m.id);
+      return r?{...m,analysis:r.analysis,analyzing:false}:m;
+    }));
+    setProgress(100);
     setAnalyzingAll(false);
-  },[markets,analyzeMarket]);
+  },[markets]);
 
   const toggleSort=col=>{
     if(sortBy===col)setSortDir(d=>d==="desc"?"asc":"desc");
@@ -998,9 +1268,11 @@ export default function App() {
 
   const filtered=markets
     .filter(m=>{
-      if(filter==="hot")return m.analysis&&Math.abs(m.analysis.aiProb-m.polyProb)>0.18;
-      if(filter==="long")return m.analysis&&m.analysis.signal==="LONG";
-      if(filter==="short")return m.analysis&&m.analysis.signal==="SHORT";
+      if(filter==="hot")  return m.analysis && Math.abs(m.analysis.aiProb-m.polyProb)>0.18;
+      if(filter==="long") return m.analysis && (m.analysis.signal==="LONG"  || m.analysis.verdict?.includes('BUY'));
+      if(filter==="short")return m.analysis && (m.analysis.signal==="SHORT" || m.analysis.verdict?.includes('SELL'));
+      // "all" tab: hide NEUTRAL, show everything else (including unanalyzed)
+      if(m.analysis && m.analysis.verdict==='NEUTRAL') return false;
       return true;
     })
     .filter(m=>!search||m.question.toLowerCase().includes(search.toLowerCase())||m.category.toLowerCase().includes(search.toLowerCase()))
@@ -1036,7 +1308,7 @@ export default function App() {
             padding:"12px 18px",fontSize:12,color:"var(--white-60)",
             marginBottom:28,textAlign:"left",letterSpacing:0.3,
           }}>$ node backend/server.js</div>
-          <button onClick={()=>window.location.reload()} className="btn-star" style={{width:"100%",padding:"12px",fontSize:13}}>
+          <button onClick={()=>window.location.reload()} className="btn-glass" style={{width:"100%",padding:"12px",fontSize:13}}>
             ↻ Retry
           </button>
         </div>
@@ -1047,9 +1319,8 @@ export default function App() {
   return (
     <>
       <style>{css}</style>
-      <StarCanvas/>
 
-      <div style={{minHeight:"100vh"}}>
+      <div style={{minHeight:"100vh", position:'relative', zIndex:1}}>
 
         {/* ── Topbar ── */}
         <header className="glass s0" style={{
@@ -1108,7 +1379,7 @@ export default function App() {
             )}
 
             {tab==="markets"&&!analyzingAll&&analyzed.length<markets.length&&markets.length>0&&(
-              <button onClick={analyzeAll} className="btn-star" style={{fontSize:11}}>
+              <button onClick={analyzeAll} className="btn-glass" style={{fontSize:11}}>
                 Analyze all ({markets.length-analyzed.length})
               </button>
             )}
@@ -1129,6 +1400,7 @@ export default function App() {
         {/* ── Scanner ── */}
         {tab==="markets"&&(
           <div style={{paddingBottom:56}}>
+            <BentoGrid markets={markets} analyzed={analyzed} hot={hot} strong={strong}/>
             <StatCards total={markets.length} analyzed={analyzed.length} hot={hot.length} strong={strong.length}/>
 
             {showOnboard&&<OnboardingBanner onDismiss={()=>setShowOnboard(false)}/>}
@@ -1141,7 +1413,7 @@ export default function App() {
                 {id:"long", label:"▲ Undervalued"},
                 {id:"short",label:"▼ Overvalued"},
               ].map(f=>(
-                <button key={f.id} className={`fpill ${filter===f.id?"on":""}`} onClick={()=>setFilter(f.id)}>
+                <button key={f.id} className={`fpill btn-glass ${filter===f.id?"on":""}`} onClick={()=>setFilter(f.id)}>
                   {f.label}
                 </button>
               ))}

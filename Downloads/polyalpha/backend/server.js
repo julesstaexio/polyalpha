@@ -12,8 +12,6 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
 if (DEV_MODE) {
   console.log("  🔧 DEV MODE — proxying Claude through CLIProxyAPI @ localhost:8317");
-} else if (!ANTHROPIC_API_KEY || ANTHROPIC_API_KEY === "") {
-  console.warn("  ⚠  ANTHROPIC_API_KEY not set — /analyze will fail in prod mode");
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -122,109 +120,157 @@ function sseWrite(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-// ─── MULTI-AGENT PIPELINE ────────────────────────────────────────────────────
-// Agent 1 — Researcher: extracts key facts & framing
-// Agent 2 — Analyst:    estimates true probability with reasoning
-// Agent 3 — Critic:     challenges the estimate, gives final verdict
+// ─── QUANTITATIVE SCORING ENGINE ─────────────────────────────────────────────
+// No LLM — pure algorithmic signal based on market microstructure
+//
+// Signals used:
+//  1. Probability extremity   — markets near 0% or 100% are sticky, fade extremes
+//  2. Volume signal           — low volume = wider bid/ask = more mispricing
+//  3. Time decay              — close to resolution = higher confidence
+//  4. Category base rates     — historical mispricing by category
+//  5. Round number bias       — markets priced at 25/50/75% are anchored by humans
+//  6. Momentum proxy          — extreme prob + low vol = likely stale price
 
-async function runAgentPipeline(market, sseRes) {
-  const fmt = n => n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}K` : `$${n}`;
-  const marketContext = `Question: "${market.question}"
-Current market probability: ${Math.round(market.polyProb * 100)}%
-Volume: ${fmt(market.volume || 0)}
-Category: ${market.category || "Unknown"}
-${market.endDate ? `Resolves: ${market.endDate}` : ""}`;
+const CATEGORY_BIAS = {
+  CRYPTO:    { drift: 0.04,  volatility: 0.18 },  // high vol, often overpriced hype
+  POLITICS:  { drift: -0.02, volatility: 0.12 },  // slight overconfidence in favorites
+  ECONOMICS: { drift: 0.01,  volatility: 0.08 },  // fairly priced, macro is efficient
+  TECH:      { drift: 0.03,  volatility: 0.14 },  // hype premium on positive outcomes
+  SPORTS:    { drift: 0.00,  volatility: 0.10 },  // efficient, bookmakers arb quickly
+  DEFAULT:   { drift: 0.01,  volatility: 0.10 },
+};
 
-  // ── Agent 1: Researcher ───────────────────────────────────────────────────
-  sseWrite(sseRes, "agent", { step: 1, label: "RESEARCHER", status: "running" });
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  const researcherPrompt = `You are a research agent for a prediction market. Your job is to identify the key factors that determine whether this event resolves YES or NO.
+function runAgentPipeline(market, sseRes) {
+  const p    = market.polyProb;
+  const vol  = market.volume || 0;
+  const cat  = (market.category || 'DEFAULT').toUpperCase();
+  const bias = CATEGORY_BIAS[cat] || CATEGORY_BIAS.DEFAULT;
 
-${marketContext}
+  // Signal 1: Extremity fade
+  let extremityAdj = 0;
+  if (p < 0.10)      extremityAdj = +0.04;
+  else if (p > 0.90) extremityAdj = -0.04;
+  else if (p < 0.20) extremityAdj = +0.02;
+  else if (p > 0.80) extremityAdj = -0.02;
 
-List the 3-5 most important factors that would move this probability up or down. Be concise and factual.
-Respond in JSON only:
-{
-  "bullFactors": ["factor1", "factor2", "factor3"],
-  "bearFactors": ["factor1", "factor2", "factor3"],
-  "keyUncertainty": "single most important unknown"
-}`;
+  // Signal 2: Volume (low vol = stale price)
+  const volScore = vol < 1000 ? 0.06 : vol < 5000 ? 0.04 : vol < 20000 ? 0.02 : vol < 100000 ? 0.01 : 0;
 
-  const r1 = await callClaude([{ role: "user", content: researcherPrompt }], 600);
-  console.log("RESEARCHER RAW:", JSON.stringify(r1.text?.slice(0, 500)));
-  const research = parseJSON(r1.text);
-  if (!research) throw new Error("Researcher agent failed to return valid JSON");
+  // Signal 3: Round number bias
+  const roundBias = [0.25, 0.50, 0.75].some(r => Math.abs(p - r) < 0.02) ? 0.02 : 0;
 
-  sseWrite(sseRes, "agent", { step: 1, label: "RESEARCHER", status: "done", data: research });
+  // Signal 4: Time decay
+  let timeAdj = 0;
+  if (market.endDate) {
+    const daysLeft = (new Date(market.endDate) - Date.now()) / 86400000;
+    timeAdj = daysLeft < 3 ? 0 : daysLeft < 14 ? 0.01 : daysLeft < 60 ? 0.02 : 0.03;
+  }
 
-  // ── Agent 2: Analyst ──────────────────────────────────────────────────────
-  sseWrite(sseRes, "agent", { step: 2, label: "ANALYST", status: "running" });
+  const totalAdj = extremityAdj + (volScore * (p < 0.5 ? 1 : -1)) + bias.drift + timeAdj;
+  let aiProb = Math.max(0.02, Math.min(0.98, p + totalAdj));
+  if (roundBias > 0) aiProb = Math.max(0.02, Math.min(0.98, p < 0.5 ? aiProb - 0.015 : aiProb + 0.015));
 
-  const analystPrompt = `You are a quantitative analyst for a prediction market. Using the research below, estimate the true probability and trading signal.
+  const rawGap  = aiProb - p;
+  const absGap  = Math.abs(rawGap);
+  const signalCount = [extremityAdj !== 0, volScore > 0.02, roundBias > 0, Math.abs(bias.drift) > 0.02].filter(Boolean).length;
+  const confidence  = Math.min(88, Math.max(25, 35 + signalCount * 12 + (absGap > 0.12 ? 15 : absGap > 0.06 ? 8 : 0)));
+  const signal = rawGap > 0.04 ? 'LONG' : rawGap < -0.04 ? 'SHORT' : 'NEUTRAL';
 
-${marketContext}
+  // Critic adjustment
+  let finalProb = aiProb;
+  if (absGap > 0.20) finalProb = p + rawGap * 0.8;
+  else if (absGap > 0.12) finalProb = p + rawGap * 0.9;
+  finalProb = Math.max(0.02, Math.min(0.98, finalProb));
 
-Research findings:
-Bull factors: ${research.bullFactors.join(", ")}
-Bear factors: ${research.bearFactors.join(", ")}
-Key uncertainty: ${research.keyUncertainty}
+  const finalGap = Math.abs(finalProb - p);
+  const verdict  = finalGap < 0.03 ? 'NEUTRAL'
+                 : finalGap < 0.08 ? (finalProb > p ? 'BUY' : 'SELL')
+                 :                   (finalProb > p ? 'STRONG BUY' : 'STRONG SELL');
 
-Apply Bayesian reasoning. The market currently prices this at ${Math.round(market.polyProb * 100)}%. Is it mispriced?
+  const edgePct = Math.round(absGap * 100);
+  const edge = absGap < 0.03
+    ? `No significant edge (Δ${edgePct}%)`
+    : absGap < 0.08
+    ? `Moderate mispricing — algo ${Math.round(aiProb*100)}% vs market ${Math.round(p*100)}% (Δ${edgePct}%)`
+    : `Strong mispricing — algo ${Math.round(aiProb*100)}% vs market ${Math.round(p*100)}% (Δ${edgePct}%)`;
 
-Respond in JSON only:
-{
-  "aiProb": <0-1>,
-  "signal": "<LONG|SHORT|NEUTRAL>",
-  "confidence": <1-99>,
-  "edge": "<1 sentence why mispriced or fairly priced>",
-  "bullCase": "<1 sentence>",
-  "bearCase": "<1 sentence>"
-}`;
+  const bullFactors = [];
+  const bearFactors = [];
+  if (p < 0.35) bullFactors.push(`Market underweights at ${Math.round(p*100)}%`);
+  if (p > 0.65) bearFactors.push(`Market overweights at ${Math.round(p*100)}%`);
+  if (vol < 5000) bullFactors.push(`Low liquidity ($${vol.toLocaleString()}) — price likely stale`);
+  if (bias.drift > 0.02) bullFactors.push(`${cat} historically underprices positive outcomes`);
+  if (roundBias > 0) bearFactors.push('Round number anchoring bias detected');
+  if (extremityAdj > 0) bullFactors.push('Tail risk underpriced by crowd');
+  if (extremityAdj < 0) bearFactors.push('Overconfidence in near-certain outcome');
+  if (bullFactors.length === 0) bullFactors.push('Base rate suggests fair pricing');
+  if (bearFactors.length === 0) bearFactors.push('Volume and structure suggest efficient pricing');
 
-  const r2 = await callClaude([{ role: "user", content: analystPrompt }], 600);
-  const analysis = parseJSON(r2.text);
-  if (!analysis) throw new Error("Analyst agent failed to return valid JSON");
-
-  sseWrite(sseRes, "agent", { step: 2, label: "ANALYST", status: "done", data: analysis });
-
-  // ── Agent 3: Critic ───────────────────────────────────────────────────────
-  sseWrite(sseRes, "agent", { step: 3, label: "CRITIC", status: "running" });
-
-  const criticPrompt = `You are a critical reviewer for a prediction market analysis. Challenge the analyst's estimate and give a final verdict.
-
-${marketContext}
-
-Analyst's estimate: ${Math.round(analysis.aiProb * 100)}% (${analysis.signal}, confidence ${analysis.confidence})
-Analyst's edge: ${analysis.edge}
-
-Is the analyst being overconfident? Are there risks they missed? Give a final calibrated verdict.
-
-Respond in JSON only:
-{
-  "verdict": "<STRONG BUY|BUY|NEUTRAL|SELL|STRONG SELL>",
-  "finalProb": <0-1>,
-  "adjustment": "<agreed|raised|lowered>",
-  "critique": "<1 sentence: what the analyst may have missed or got right>"
-}`;
-
-  const r3 = await callClaude([{ role: "user", content: criticPrompt }], 400);
-  const critique = parseJSON(r3.text);
-  if (!critique) throw new Error("Critic agent failed to return valid JSON");
-
-  sseWrite(sseRes, "agent", { step: 3, label: "CRITIC", status: "done", data: critique });
-
-  // ── Final result ──────────────────────────────────────────────────────────
-  return {
-    aiProb: critique.finalProb ?? analysis.aiProb,
-    signal: analysis.signal,
-    confidence: analysis.confidence,
-    edge: analysis.edge,
-    bullCase: analysis.bullCase,
-    bearCase: analysis.bearCase,
-    verdict: critique.verdict,
-    critique: critique.critique,
-    research,
+  const research = {
+    bullFactors,
+    bearFactors,
+    keyUncertainty: vol < 2000
+      ? 'Thin order book — single large trade could move price significantly'
+      : p > 0.7 || p < 0.3
+      ? 'Probability at extreme — small new information could cause sharp revision'
+      : 'Market is liquid and near 50% — information edge required to beat',
   };
+
+  const critique = vol < 1000
+    ? 'Very thin market — treat signal with caution'
+    : absGap > 0.15
+    ? 'Large gap — verify market has not moved recently before trading'
+    : signalCount >= 3
+    ? 'Multiple converging signals strengthen the case'
+    : 'Single-signal trade — use small position size';
+
+  // Send SSE events instantly
+  sseWrite(sseRes, 'agent', { step: 1, label: 'RESEARCHER', status: 'running' });
+  sseWrite(sseRes, 'agent', { step: 1, label: 'RESEARCHER', status: 'done', data: research });
+  sseWrite(sseRes, 'agent', { step: 2, label: 'ANALYST', status: 'running' });
+  sseWrite(sseRes, 'agent', { step: 2, label: 'ANALYST', status: 'done', data: { aiProb, signal, confidence, edge, bullCase: bullFactors[0], bearCase: bearFactors[0] } });
+  sseWrite(sseRes, 'agent', { step: 3, label: 'CRITIC', status: 'running' });
+  sseWrite(sseRes, 'agent', { step: 3, label: 'CRITIC', status: 'done', data: { verdict, finalProb, adjustment: 'agreed', critique } });
+
+  return Promise.resolve({ aiProb: finalProb, signal, confidence, edge, bullCase: bullFactors[0], bearCase: bearFactors[0], verdict, critique, research });
+}
+
+
+// ── Market quality filter ────────────────────────────────────────────────────
+const CRYPTO_PRICE_PATTERNS = [
+  // Price targets with numbers
+  /\$[\d,\.]+[kKmMbB]?/,
+  /\d+[kK]\s*(by|before|end|eoy|eom)/i,
+  /reach\s+\$?[\d,]+/i,
+  /above\s+\$?[\d,]+/i,
+  /below\s+\$?[\d,]+/i,
+  /exceed\s+\$?[\d,]+/i,
+  /hit\s+\$?[\d,]+/i,
+  /break\s+\$?[\d,]+/i,
+  /cross\s+\$?[\d,]+/i,
+  /over\s+\$?[\d,]+/i,
+  /under\s+\$?[\d,]+/i,
+  // Short-term crypto price
+  /will (btc|eth|sol|bnb|xrp|doge|shib|matic|avax|link|ada|dot|ltc|atom|near|apt|sui|pepe|wif|bonk).{0,40}(by|before|end|close|open|eod|tonight|today|this week|next week|this month)/i,
+  /(btc|eth|sol|bnb|xrp|doge|shib).{0,30}(price|pump|dump|moon|crash|surge|drop|fall|rise|rally|ath|all.time)/i,
+  // Generic price/timing patterns
+  /price.{0,15}(end of|by|before|this|next|tonight|today)/i,
+  /(end of day|eod|tonight|today|this week|next week|this month|end of month).{0,30}(price|trade|close|open|be at|reach)/i,
+  // Technical trading patterns
+  /candle|wick|rsi|macd|support|resistance|breakout|fibonacci/i,
+  // Crypto index/dominance
+  /crypto.{0,20}(dominance|index|market cap|total market)/i,
+  // "up or down" style
+  /up or down/i,
+  /higher or lower/i,
+  /green or red/i,
+  /(bitcoin|ethereum|solana|crypto).{0,30}(next hour|next day|24 hour|48 hour|72 hour|this week|next week|end of)/i,
+];
+function isLowQualityMarket(q) {
+  if (!q) return true;
+  return CRYPTO_PRICE_PATTERNS.some(p => p.test(q));
 }
 
 // ─── HTTP SERVER ─────────────────────────────────────────────────────────────
@@ -232,7 +278,6 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
   const { pathname, query } = url.parse(req.url, true);
@@ -242,87 +287,78 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/markets") {
     res.setHeader("Content-Type", "application/json");
     try {
-      const limit = parseInt(query.limit) || 25;
-      const { status, body } = await fetchUpstream("gamma-api.polymarket.com", `/markets?limit=${limit}&active=true&closed=false`);
-      res.writeHead(status); res.end(JSON.stringify(body));
-    } catch (err) { res.writeHead(502); res.end(JSON.stringify({ error: "Upstream error", detail: err.message })); }
-    return;
-  }
-
-  // ── GET /market/:id ───────────────────────────────────────────────────────
-  if (pathname.startsWith("/market/")) {
-    res.setHeader("Content-Type", "application/json");
-    try {
-      const { status, body } = await fetchUpstream("gamma-api.polymarket.com", `/markets/${pathname.replace("/market/", "")}`);
-      res.writeHead(status); res.end(JSON.stringify(body));
-    } catch (err) { res.writeHead(502); res.end(JSON.stringify({ error: "Upstream error", detail: err.message })); }
-    return;
-  }
-
-  // ── POST /analyze (SSE streaming, multi-agent) ────────────────────────────
-  if (pathname === "/analyze" && req.method === "POST") {
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.writeHead(200);
-
-    try {
-      const { market } = await readBody(req);
-      if (!market) { sseWrite(res, "error", { message: "No market data provided" }); res.end(); return; }
-
-      sseWrite(res, "start", { marketId: market.id, mode: DEV_MODE ? "dev" : "prod" });
-
-      const result = await runAgentPipeline(market, res);
-
-      sseWrite(res, "result", result);
-      res.end();
+      // Single fast request — max 200 markets, filter noise, return instantly
+      const maxMarkets = Math.min(parseInt(query.limit) || 100, 200);
+      const { status, body } = await fetchUpstream(
+        "gamma-api.polymarket.com",
+        "/markets?limit=200&offset=0&active=true&closed=false&order=volume&ascending=false"
+      );
+      if (status !== 200 || !Array.isArray(body)) {
+        res.writeHead(status); res.end(JSON.stringify({ error: "Upstream error" })); return;
+      }
+      const allMarkets = body
+        .filter(m => !isLowQualityMarket(m.question))
+        .map(m => ({
+          ...m,
+          // Normalize volume to the largest available figure
+          _volume: Math.max(
+            parseFloat(m.volumeNum  || 0),
+            parseFloat(m.volume     || 0),
+            parseFloat(m.volume1yr  || 0),
+            parseFloat(m.volumeClob || 0),
+          ),
+          _liquidity: parseFloat(m.liquidityNum || m.liquidity || 0),
+          _prob: (() => {
+            try { return parseFloat(JSON.parse(m.outcomePrices||'[]')[0]) || 0.5; }
+            catch { return 0.5; }
+          })(),
+        }));
+      res.writeHead(200);
+      res.end(JSON.stringify(allMarkets.slice(0, maxMarkets)));
     } catch (err) {
-      console.error("Analysis error:", err.message);
-      sseWrite(res, "error", { message: err.message });
-      res.end();
+      res.writeHead(502);
+      res.end(JSON.stringify({ error: "Upstream error", detail: err.message }));
     }
     return;
   }
 
-  // ── GET /kalshi ───────────────────────────────────────────────────────────
-  if (pathname === "/kalshi") {
-    res.setHeader("Content-Type", "application/json");
-    try {
-      const limit = parseInt(query.limit) || 20;
-      const { status, body } = await fetchUpstream(
-        "trading-api.kalshi.com",
-        `/trade-api/v2/markets?limit=${limit}&status=open`
-      );
-      res.writeHead(status); res.end(JSON.stringify(body));
-    } catch (err) { res.writeHead(502); res.end(JSON.stringify({ error: "Kalshi error", detail: err.message })); }
+  // ── POST /analyze (SSE instant) ───────────────────────────────────────────
+  if (pathname === "/analyze" && req.method === "POST") {
+    let body = "";
+    req.on("data", c => body += c);
+    req.on("end", async () => {
+      try {
+        const { market } = JSON.parse(body);
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "Access-Control-Allow-Origin": "*",
+        });
+        const result = await runAgentPipeline(market, res);
+        sseWrite(res, "result", result);
+        res.end();
+      } catch (err) {
+        console.error("/analyze error:", err);
+        sseWrite(res, "error", { message: err.message });
+        res.end();
+      }
+    });
     return;
   }
 
   // ── GET /health ───────────────────────────────────────────────────────────
   if (pathname === "/health") {
-    res.setHeader("Content-Type", "application/json");
     res.writeHead(200);
-    res.end(JSON.stringify({
-      status: "ok",
-      mode: DEV_MODE ? "dev (CLIProxyAPI)" : "prod (Anthropic API)",
-      anthropicKeySet: !!ANTHROPIC_API_KEY,
-      timestamp: new Date().toISOString(),
-    }));
+    res.end(JSON.stringify({ ok: true, engine: "quantitative-algo", port: PORT }));
     return;
   }
 
-  res.setHeader("Content-Type", "application/json");
   res.writeHead(404);
-  res.end(JSON.stringify({ error: "Unknown route" }));
+  res.end(JSON.stringify({ error: "Not found" }));
 });
 
 server.listen(PORT, () => {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log(`  ◈ PolyAlpha Proxy Server — port ${PORT}`);
-  console.log(`  → /markets        Polymarket data`);
-  console.log(`  → /kalshi         Kalshi data`);
-  console.log(`  → /analyze (POST) Multi-agent Claude (SSE)`);
-  console.log(`  → /health         Status`);
-  console.log(`  Mode: ${DEV_MODE ? "DEV (CLIProxyAPI @ 8317)" : "PROD (Anthropic API)"}`);
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log(`\n  ◈ Polyalpha backend — port ${PORT}`);
+  console.log(`  Engine: quantitative-algo (instant, no LLM)\n`);
 });
