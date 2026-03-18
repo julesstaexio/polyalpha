@@ -1331,16 +1331,29 @@ export default function App() {
         }}>
           {/* Left — logo + nav */}
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            {/* Logo — orbiting ring */}
-            <div style={{position:"relative",width:32,height:32,flexShrink:0}}>
-              <OrbitRing size={32} speed="10s" color="rgba(168,196,255,0.35)"/>
-              <div style={{
-                position:"absolute",inset:0,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                fontSize:14,color:"var(--white)",
-              }}>◈</div>
+            {/* Logo */}
+            <div style={{display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
+              {/* Alpha + chart SVG mark */}
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="logoGrad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stopColor="#ffffff"/>
+                    <stop offset="100%" stopColor="#a8c4ff"/>
+                  </linearGradient>
+                </defs>
+                {/* Outer subtle ring */}
+                <circle cx="14" cy="14" r="13" stroke="rgba(168,196,255,0.15)" strokeWidth="1"/>
+                {/* Alpha symbol */}
+                <text x="14" y="18" textAnchor="middle" fontFamily="Georgia, serif" fontSize="15" fontWeight="400" fill="url(#logoGrad)">α</text>
+                {/* Micro chart line inside */}
+                <polyline points="6,20 9,16 12,18 16,12 20,14 23,9" stroke="#7fffd4" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.7"/>
+              </svg>
+              {/* Wordmark */}
+              <div style={{display:"flex",alignItems:"baseline",gap:1}}>
+                <span style={{fontSize:15,fontWeight:600,letterSpacing:"-0.01em",color:"#fff"}}>Poly</span>
+                <span style={{fontSize:15,fontWeight:200,letterSpacing:"-0.01em",color:"rgba(168,196,255,0.9)"}}>alpha</span>
+              </div>
             </div>
-            <span style={{fontSize:16,fontWeight:600,letterSpacing:0.5,color:"var(--white)",marginRight:4}}>Polyalpha</span>
             <div style={{width:1,height:16,background:"var(--white-10)",margin:"0 6px"}}/>
             <button className={`ntab ${tab==="markets"?"on":""}`} onClick={()=>setTab("markets")}>Scanner</button>
             <button className={`ntab ${tab==="history"?"on":""}`} onClick={()=>setTab("history")}>History</button>
