@@ -53,8 +53,10 @@ export async function fetchMarket(
   const cached = await getCached<PolymarketMarket>(cacheKey);
   if (cached) return cached;
 
-  // Gamma API /markets/:id expects numeric id only.
-  // For slug or conditionId (0x...), use query params.
+  // Gamma API lookup strategy:
+  //   numeric → GET /markets/{id}
+  //   0x...   → GET /markets?clob_token_ids=... (fallback: search all)
+  //   slug    → GET /markets/slug/{slug}  (official endpoint per docs)
   let market: PolymarketMarket | null = null;
 
   if (/^\d+$/.test(conditionId)) {
@@ -64,7 +66,7 @@ export async function fetchMarket(
       market = await res.json();
     }
   } else if (conditionId.startsWith("0x")) {
-    // conditionId hex — query by clob_token_ids won't work, try slug search
+    // conditionId hex — search in bulk as Gamma has no exact conditionId endpoint
     const res = await fetch(
       `${GAMMA_URL}/markets?limit=200&active=true&closed=false`
     );
@@ -73,13 +75,12 @@ export async function fetchMarket(
       market = all.find((m) => m.conditionId === conditionId) || null;
     }
   } else {
-    // Slug — most reliable lookup
+    // Slug — use official /markets/slug/{slug} endpoint
     const res = await fetch(
-      `${GAMMA_URL}/markets?slug=${encodeURIComponent(conditionId)}&limit=1`
+      `${GAMMA_URL}/markets/slug/${encodeURIComponent(conditionId)}`
     );
     if (res.ok) {
-      const markets: PolymarketMarket[] = await res.json();
-      market = markets[0] || null;
+      market = await res.json();
     }
   }
 
@@ -141,11 +142,40 @@ export async function fetchPrice(
 }
 
 // ─── CLOB Authenticated (trading) ───
+// Per Polymarket docs: L2 auth uses HMAC-SHA256 headers
+// Headers: POLY_ADDRESS, POLY_API_KEY, POLY_PASSPHRASE, POLY_TIMESTAMP, POLY_SIGNATURE
+
+import { createHmac } from "crypto";
 
 interface CLOBCredentials {
   apiKey: string;
   secret: string;
   passphrase: string;
+  address?: string; // wallet address needed for L2 headers
+}
+
+/**
+ * Generate L2 HMAC-SHA256 authentication headers per Polymarket docs.
+ */
+function buildL2Headers(
+  credentials: CLOBCredentials,
+  method: string,
+  path: string,
+  body?: string
+): Record<string, string> {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const message = timestamp + method.toUpperCase() + path + (body || "");
+  const signature = createHmac("sha256", credentials.secret)
+    .update(message)
+    .digest("base64");
+
+  return {
+    POLY_ADDRESS: credentials.address || "",
+    POLY_API_KEY: credentials.apiKey,
+    POLY_PASSPHRASE: credentials.passphrase,
+    POLY_TIMESTAMP: timestamp,
+    POLY_SIGNATURE: signature,
+  };
 }
 
 export async function placeCLOBOrder(
@@ -155,24 +185,26 @@ export async function placeCLOBOrder(
     side: "BUY" | "SELL";
     price: number;
     size: number;
-    type?: "GTC" | "FOK" | "GTD";
+    type?: "GTC" | "FOK" | "GTD" | "FAK";
   }
 ): Promise<CLOBOrder> {
+  const orderBody = JSON.stringify({
+    token_id: params.tokenId,
+    side: params.side,
+    price: params.price,
+    size: params.size,
+    type: params.type || "GTC",
+  });
+
+  const headers = buildL2Headers(credentials, "POST", "/order", orderBody);
+
   const res = await fetch(`${CLOB_URL}/order`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      POLY_API_KEY: credentials.apiKey,
-      POLY_SECRET: credentials.secret,
-      POLY_PASSPHRASE: credentials.passphrase,
+      ...headers,
     },
-    body: JSON.stringify({
-      token_id: params.tokenId,
-      side: params.side,
-      price: params.price,
-      size: params.size,
-      type: params.type || "GTC",
-    }),
+    body: orderBody,
   });
 
   if (!res.ok) {
@@ -187,13 +219,12 @@ export async function cancelCLOBOrder(
   credentials: CLOBCredentials,
   orderId: string
 ): Promise<void> {
-  const res = await fetch(`${CLOB_URL}/order/${orderId}`, {
+  const path = `/order/${orderId}`;
+  const headers = buildL2Headers(credentials, "DELETE", path);
+
+  const res = await fetch(`${CLOB_URL}${path}`, {
     method: "DELETE",
-    headers: {
-      POLY_API_KEY: credentials.apiKey,
-      POLY_SECRET: credentials.secret,
-      POLY_PASSPHRASE: credentials.passphrase,
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -206,15 +237,13 @@ export async function fetchOpenOrders(
   credentials: CLOBCredentials,
   market?: string
 ): Promise<CLOBOrder[]> {
-  const params = new URLSearchParams();
-  if (market) params.set("market", market);
+  const queryParams = new URLSearchParams();
+  if (market) queryParams.set("market", market);
+  const path = `/orders?${queryParams}`;
+  const headers = buildL2Headers(credentials, "GET", path);
 
-  const res = await fetch(`${CLOB_URL}/orders?${params}`, {
-    headers: {
-      POLY_API_KEY: credentials.apiKey,
-      POLY_SECRET: credentials.secret,
-      POLY_PASSPHRASE: credentials.passphrase,
-    },
+  const res = await fetch(`${CLOB_URL}${path}`, {
+    headers,
   });
 
   if (!res.ok) throw new Error(`CLOB orders error: ${res.status}`);

@@ -24,10 +24,11 @@ interface ChartPoint {
 }
 
 const INTERVALS = [
+  { label: "1H", value: "1h", fidelity: 60 },
+  { label: "6H", value: "6h", fidelity: 72 },
   { label: "1D", value: "1d", fidelity: 96 },
   { label: "1W", value: "1w", fidelity: 168 },
   { label: "1M", value: "1m", fidelity: 120 },
-  { label: "3M", value: "3m", fidelity: 90 },
   { label: "All", value: "max", fidelity: 200 },
 ] as const;
 
