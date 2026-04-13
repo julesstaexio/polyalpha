@@ -65,16 +65,17 @@ function QuantSignalRow({ signal }: { signal: QuantSignal }) {
 interface AIAnalysisPanelProps {
   conditionId: string;
   userId?: string;
+  bare?: boolean;
 }
 
-export function AIAnalysisPanel({ conditionId, userId }: AIAnalysisPanelProps) {
+export function AIAnalysisPanel({ conditionId, userId, bare }: AIAnalysisPanelProps) {
   const { analyses, isAnalyzing, streamingText, analyze, cancel } =
     useAnalysis();
   const analysis: MarketAnalysis | undefined = analyses[conditionId];
 
-  return (
-    <div className="border border-border rounded-[11px] bg-card">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+  const content = (
+    <>
+      <div className={`flex items-center justify-between ${bare ? "mb-4" : "px-4 py-3 border-b border-border"}`}>
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <Brain className="h-4 w-4 text-pm-blue" />
           AI Analysis
@@ -99,7 +100,7 @@ export function AIAnalysisPanel({ conditionId, userId }: AIAnalysisPanelProps) {
         </button>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className={bare ? "space-y-4" : "p-4 space-y-4"}>
         {/* Streaming state */}
         {isAnalyzing && !analysis && (
           <div className="space-y-2">
@@ -226,6 +227,14 @@ export function AIAnalysisPanel({ conditionId, userId }: AIAnalysisPanelProps) {
           </>
         )}
       </div>
+    </>
+  );
+
+  if (bare) return content;
+
+  return (
+    <div className="border border-border rounded-[11px] bg-card">
+      {content}
     </div>
   );
 }
