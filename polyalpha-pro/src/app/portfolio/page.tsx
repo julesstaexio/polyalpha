@@ -9,8 +9,13 @@ import {
   DollarSign,
   Clock,
   Loader2,
+  ArrowDownToLine,
+  ArrowUpFromLine,
 } from "lucide-react";
 import { useState } from "react";
+import { useWalletBalance } from "@/hooks/use-wallet-balance";
+import { DepositWithdraw } from "@/components/trading/deposit-withdraw";
+import { DeriveKeys } from "@/components/trading/derive-keys";
 import {
   AreaChart,
   Area,
@@ -31,6 +36,7 @@ export default function PortfolioPage() {
   const [tab, setTab] = useState<"positions" | "history" | "analytics">(
     "positions"
   );
+  const { balance, isConnected } = useWalletBalance();
 
   const { data: trades, isLoading } = useQuery({
     queryKey: ["trades", userId],
@@ -106,57 +112,121 @@ export default function PortfolioPage() {
         </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          {
-            label: "Total P&L",
-            value: `${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}`,
-            icon: DollarSign,
-            color: totalPnl >= 0 ? "text-pm-green" : "text-pm-red",
-          },
-          {
-            label: "Open Positions",
-            value: openTrades.length,
-            icon: TrendingUp,
-            color: "text-foreground",
-          },
-          {
-            label: "Total Trades",
-            value: trades?.length || 0,
-            icon: Clock,
-            color: "text-foreground",
-          },
-          {
-            label: "Win Rate",
-            value:
-              closedTrades.length > 0
-                ? `${(
-                    (closedTrades.filter(
-                      (t: { pnl?: number }) => (t.pnl || 0) > 0
-                    ).length /
-                      closedTrades.length) *
-                    100
-                  ).toFixed(0)}%`
-                : "-",
-            icon: TrendingUp,
-            color: "text-foreground",
-          },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            className="border border-border rounded-[11px] bg-card p-4"
-          >
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <stat.icon className="h-3 w-3" />
-              {stat.label}
+      {/* Wallet balance + Deposit/Withdraw */}
+      {isConnected && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-3">
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                {
+                  label: "Wallet USDC",
+                  value: `$${balance.toFixed(2)}`,
+                  icon: Wallet,
+                  color: "text-pm-blue",
+                },
+                {
+                  label: "Total P&L",
+                  value: `${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}`,
+                  icon: DollarSign,
+                  color: totalPnl >= 0 ? "text-pm-green" : "text-pm-red",
+                },
+                {
+                  label: "Open Positions",
+                  value: openTrades.length,
+                  icon: TrendingUp,
+                  color: "text-foreground",
+                },
+                {
+                  label: "Win Rate",
+                  value:
+                    closedTrades.length > 0
+                      ? `${(
+                          (closedTrades.filter(
+                            (t: { pnl?: number }) => (t.pnl || 0) > 0
+                          ).length /
+                            closedTrades.length) *
+                          100
+                        ).toFixed(0)}%`
+                      : "-",
+                  icon: TrendingUp,
+                  color: "text-foreground",
+                },
+              ].map((stat) => (
+                <div
+                  key={stat.label}
+                  className="border border-border rounded-[11px] bg-card p-4"
+                >
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                    <stat.icon className="h-3 w-3" />
+                    {stat.label}
+                  </div>
+                  <div className={`text-xl font-bold tabular-nums ${stat.color}`}>
+                    {stat.value}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className={`text-xl font-bold tabular-nums ${stat.color}`}>
-              {stat.value}
-            </div>
+            <DeriveKeys />
           </div>
-        ))}
-      </div>
+          <div>
+            <DepositWithdraw />
+          </div>
+        </div>
+      )}
+
+      {!isConnected && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            {
+              label: "Total P&L",
+              value: `${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}`,
+              icon: DollarSign,
+              color: totalPnl >= 0 ? "text-pm-green" : "text-pm-red",
+            },
+            {
+              label: "Open Positions",
+              value: openTrades.length,
+              icon: TrendingUp,
+              color: "text-foreground",
+            },
+            {
+              label: "Total Trades",
+              value: trades?.length || 0,
+              icon: Clock,
+              color: "text-foreground",
+            },
+            {
+              label: "Win Rate",
+              value:
+                closedTrades.length > 0
+                  ? `${(
+                      (closedTrades.filter(
+                        (t: { pnl?: number }) => (t.pnl || 0) > 0
+                      ).length /
+                        closedTrades.length) *
+                      100
+                    ).toFixed(0)}%`
+                  : "-",
+              icon: TrendingUp,
+              color: "text-foreground",
+            },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="border border-border rounded-[11px] bg-card p-4"
+            >
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                <stat.icon className="h-3 w-3" />
+                {stat.label}
+              </div>
+              <div className={`text-xl font-bold tabular-nums ${stat.color}`}>
+                {stat.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-border">
