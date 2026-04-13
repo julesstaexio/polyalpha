@@ -53,10 +53,29 @@ export async function fetchMarket(
   const cached = await getCached<PolymarketMarket>(cacheKey);
   if (cached) return cached;
 
-  const res = await fetch(`${GAMMA_URL}/markets/${conditionId}`);
-  if (!res.ok) return null;
+  // Gamma API /markets/:id expects numeric id, not conditionId.
+  // For conditionId (0x...) lookups, query by slug or condition_id param.
+  let market: PolymarketMarket | null = null;
 
-  const market: PolymarketMarket = await res.json();
+  if (conditionId.startsWith("0x")) {
+    // Query by slug param (most reliable for conditionId lookups)
+    const res = await fetch(
+      `${GAMMA_URL}/markets?condition_id=${encodeURIComponent(conditionId)}&limit=1`
+    );
+    if (res.ok) {
+      const markets: PolymarketMarket[] = await res.json();
+      market = markets[0] || null;
+    }
+  } else {
+    // Numeric id or slug — try direct lookup
+    const res = await fetch(`${GAMMA_URL}/markets/${conditionId}`);
+    if (res.ok) {
+      market = await res.json();
+    }
+  }
+
+  if (!market) return null;
+
   const enriched = {
     ...market,
     probability: parseProbability(market.outcomePrices),
