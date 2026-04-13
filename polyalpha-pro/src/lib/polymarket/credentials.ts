@@ -65,12 +65,12 @@ export async function storeCLOBCredentials(
 
 export async function getCLOBCredentials(
   userId: string
-): Promise<{ apiKey: string; secret: string; passphrase: string } | null> {
+): Promise<{ apiKey: string; secret: string; passphrase: string; address: string } | null> {
   const supabase = createServerSupabase();
 
   const { data, error } = await supabase
     .from("clob_credentials")
-    .select("api_key_encrypted, secret_encrypted, passphrase_encrypted")
+    .select("api_key_encrypted, secret_encrypted, passphrase_encrypted, wallet_address")
     .eq("user_id", userId)
     .single();
 
@@ -80,6 +80,7 @@ export async function getCLOBCredentials(
     apiKey: decrypt(JSON.parse(data.api_key_encrypted)),
     secret: decrypt(JSON.parse(data.secret_encrypted)),
     passphrase: decrypt(JSON.parse(data.passphrase_encrypted)),
+    address: data.wallet_address || "",
   };
 }
 
