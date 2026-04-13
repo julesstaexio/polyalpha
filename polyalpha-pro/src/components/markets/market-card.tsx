@@ -43,7 +43,7 @@ export function MarketCard({ market }: { market: PolymarketMarket }) {
             </div>
           )}
           <Link
-            href={`/markets/${market.conditionId}`}
+            href={`/markets/${market.slug || market.conditionId}`}
             className="flex-1 min-w-0"
           >
             <h3 className="text-[15px] font-medium leading-snug line-clamp-2 text-foreground hover:underline cursor-pointer">
@@ -55,7 +55,7 @@ export function MarketCard({ market }: { market: PolymarketMarket }) {
         {/* Outcome buttons */}
         <div className="flex items-center gap-2 mb-3">
           <Link
-            href={`/markets/${market.conditionId}`}
+            href={`/markets/${market.slug || market.conditionId}`}
             className="flex-1 flex items-center justify-between gap-2 h-10 px-4 rounded-[7px] bg-pm-green/15 hover:bg-pm-green/25 transition-colors"
           >
             <span className="text-sm font-medium text-pm-green">Yes</span>
@@ -64,7 +64,7 @@ export function MarketCard({ market }: { market: PolymarketMarket }) {
             </span>
           </Link>
           <Link
-            href={`/markets/${market.conditionId}`}
+            href={`/markets/${market.slug || market.conditionId}`}
             className="flex-1 flex items-center justify-between gap-2 h-10 px-4 rounded-[7px] bg-pm-red/15 hover:bg-pm-red/25 transition-colors"
           >
             <span className="text-sm font-medium text-pm-red">No</span>
