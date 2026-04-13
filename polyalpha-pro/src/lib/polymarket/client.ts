@@ -53,24 +53,33 @@ export async function fetchMarket(
   const cached = await getCached<PolymarketMarket>(cacheKey);
   if (cached) return cached;
 
-  // Gamma API /markets/:id expects numeric id, not conditionId.
-  // For conditionId (0x...) lookups, query by slug or condition_id param.
+  // Gamma API /markets/:id expects numeric id only.
+  // For slug or conditionId (0x...), use query params.
   let market: PolymarketMarket | null = null;
 
-  if (conditionId.startsWith("0x")) {
-    // Query by slug param (most reliable for conditionId lookups)
+  if (/^\d+$/.test(conditionId)) {
+    // Numeric id — direct lookup
+    const res = await fetch(`${GAMMA_URL}/markets/${conditionId}`);
+    if (res.ok) {
+      market = await res.json();
+    }
+  } else if (conditionId.startsWith("0x")) {
+    // conditionId hex — query by clob_token_ids won't work, try slug search
     const res = await fetch(
-      `${GAMMA_URL}/markets?condition_id=${encodeURIComponent(conditionId)}&limit=1`
+      `${GAMMA_URL}/markets?limit=200&active=true&closed=false`
+    );
+    if (res.ok) {
+      const all: PolymarketMarket[] = await res.json();
+      market = all.find((m) => m.conditionId === conditionId) || null;
+    }
+  } else {
+    // Slug — most reliable lookup
+    const res = await fetch(
+      `${GAMMA_URL}/markets?slug=${encodeURIComponent(conditionId)}&limit=1`
     );
     if (res.ok) {
       const markets: PolymarketMarket[] = await res.json();
       market = markets[0] || null;
-    }
-  } else {
-    // Numeric id or slug — try direct lookup
-    const res = await fetch(`${GAMMA_URL}/markets/${conditionId}`);
-    if (res.ok) {
-      market = await res.json();
     }
   }
 

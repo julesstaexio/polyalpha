@@ -26,12 +26,14 @@ export default function MarketDetailPage({
 }: {
   params: Promise<{ conditionId: string }>;
 }) {
-  const { conditionId } = use(params);
-  const { data, isLoading, error } = useMarket(conditionId);
+  const { conditionId: slugOrId } = use(params);
+  const { data, isLoading, error } = useMarket(slugOrId);
   const { user } = useAuth();
   const userId = user?.id;
   const { isFavorite, toggle } = useFavorites();
-  const starred = isFavorite(conditionId);
+  // Use the real conditionId from market data for favorites (slugOrId may be a slug)
+  const realConditionId = data?.market?.conditionId || slugOrId;
+  const starred = isFavorite(realConditionId);
 
   if (isLoading) {
     return (
@@ -62,7 +64,7 @@ export default function MarketDetailPage({
   const volume = market.volumeNum ?? 0;
   const liquidity = market.liquidityNum ?? 0;
   const tokenIds = market.clobTokenIds ? JSON.parse(market.clobTokenIds) : [];
-  const yesTokenId = tokenIds[0] || conditionId;
+  const yesTokenId = tokenIds[0] || realConditionId;
   const yesPct = (prob * 100).toFixed(0);
   const noPct = ((1 - prob) * 100).toFixed(0);
   const imgSrc = market.icon || market.image;
@@ -114,7 +116,7 @@ export default function MarketDetailPage({
 
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => toggle(conditionId)}
+              onClick={() => toggle(realConditionId)}
               className="p-2 text-muted-foreground hover:text-foreground transition-colors"
             >
               <Star
@@ -151,12 +153,12 @@ export default function MarketDetailPage({
       </div>
 
       {/* Price chart — pass tokenId for real history */}
-      <PriceChart probability={prob} conditionId={conditionId} tokenId={yesTokenId} />
+      <PriceChart probability={prob} conditionId={realConditionId} tokenId={yesTokenId} />
 
       {/* 4-column layout: AI / Orderbook / Trade / Funds */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <div className="lg:col-span-3">
-          <AIAnalysisPanel conditionId={conditionId} userId={userId} />
+          <AIAnalysisPanel conditionId={realConditionId} userId={userId} />
         </div>
         <div className="lg:col-span-3">
           <OrderbookDisplay orderbook={orderbook} />
@@ -177,7 +179,7 @@ export default function MarketDetailPage({
       </div>
 
       {/* Comments */}
-      <CommentsSection conditionId={conditionId} marketId={market.id} />
+      <CommentsSection conditionId={realConditionId} marketId={market.id} />
     </div>
   );
 }
