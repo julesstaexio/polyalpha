@@ -5,6 +5,8 @@ import Image from "next/image";
 import { useMarket } from "@/hooks/use-markets";
 import { AIAnalysisPanel } from "@/components/markets/ai-analysis-panel";
 import { OrderForm } from "@/components/trading/order-form";
+import { DepositWithdraw } from "@/components/trading/deposit-withdraw";
+import { DeriveKeys } from "@/components/trading/derive-keys";
 import { OrderbookDisplay } from "@/components/markets/orderbook-display";
 import { PriceChart } from "@/components/markets/price-chart";
 import { CommentsSection } from "@/components/markets/comments-section";
@@ -60,6 +62,7 @@ export default function MarketDetailPage({
   const volume = market.volumeNum ?? 0;
   const liquidity = market.liquidityNum ?? 0;
   const tokenIds = market.clobTokenIds ? JSON.parse(market.clobTokenIds) : [];
+  const yesTokenId = tokenIds[0] || conditionId;
   const yesPct = (prob * 100).toFixed(0);
   const noPct = ((1 - prob) * 100).toFixed(0);
   const imgSrc = market.icon || market.image;
@@ -147,25 +150,29 @@ export default function MarketDetailPage({
         </div>
       </div>
 
-      {/* Price chart */}
-      <PriceChart probability={prob} conditionId={conditionId} />
+      {/* Price chart — pass tokenId for real history */}
+      <PriceChart probability={prob} conditionId={conditionId} tokenId={yesTokenId} />
 
-      {/* 3-column layout: AI / Orderbook / Trade */}
+      {/* 4-column layout: AI / Orderbook / Trade / Funds */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-3">
           <AIAnalysisPanel conditionId={conditionId} userId={userId} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-3">
           <OrderbookDisplay orderbook={orderbook} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-3 space-y-4">
+          <DeriveKeys />
           <OrderForm
-            tokenId={tokenIds[0] || conditionId}
+            tokenId={yesTokenId}
             marketId={market.id}
             marketQuestion={market.question}
             currentPrice={prob}
             userId={userId}
           />
+        </div>
+        <div className="lg:col-span-3">
+          <DepositWithdraw />
         </div>
       </div>
 
