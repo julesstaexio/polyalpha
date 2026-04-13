@@ -157,3 +157,101 @@ DO $$ BEGIN
   CREATE POLICY "Users see own preferences" ON user_preferences FOR ALL USING (user_id = current_setting('request.jwt.claims')::json->>'sub');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- ─── User Profiles (public display names for leaderboard) ───
+CREATE TABLE IF NOT EXISTS user_profiles (
+  user_id TEXT PRIMARY KEY,
+  wallet_address TEXT NOT NULL,
+  username TEXT UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profiles_wallet ON user_profiles(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username);
+
+-- Profiles are publicly readable (leaderboard), but only owners can write
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "Anyone can read profiles" ON user_profiles FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users update own profile" ON user_profiles FOR ALL USING (user_id = current_setting('request.jwt.claims')::json->>'sub');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ─── Leaderboard stats (aggregated by server, public read) ───
+CREATE OR REPLACE FUNCTION get_leaderboard(
+  p_period TEXT DEFAULT 'all',
+  p_limit INTEGER DEFAULT 50
+)
+RETURNS TABLE (
+  user_id TEXT,
+  wallet_address TEXT,
+  username TEXT,
+  total_pnl NUMERIC,
+  win_count BIGINT,
+  loss_count BIGINT,
+  total_trades BIGINT,
+  win_rate NUMERIC,
+  pnl_7d NUMERIC,
+  pnl_prev_7d NUMERIC,
+  trend TEXT
+) LANGUAGE sql STABLE AS $$
+  WITH period_filter AS (
+    SELECT CASE
+      WHEN p_period = '7d'  THEN NOW() - INTERVAL '7 days'
+      WHEN p_period = '30d' THEN NOW() - INTERVAL '30 days'
+      ELSE '1970-01-01'::TIMESTAMPTZ
+    END AS since
+  ),
+  user_trades AS (
+    SELECT
+      t.user_id,
+      SUM(CASE WHEN t.side = 'SELL' THEN t.price * t.filled_size ELSE -(t.price * t.filled_size) END) AS total_pnl,
+      COUNT(*) FILTER (WHERE t.side = 'SELL' AND t.price > 0.5) AS win_count,
+      COUNT(*) FILTER (WHERE t.side = 'SELL' AND t.price <= 0.5) AS loss_count,
+      COUNT(*) AS total_trades
+    FROM trades t, period_filter pf
+    WHERE t.status = 'filled' AND t.created_at >= pf.since
+    GROUP BY t.user_id
+  ),
+  recent_pnl AS (
+    SELECT
+      t.user_id,
+      SUM(CASE WHEN t.side = 'SELL' THEN t.price * t.filled_size ELSE -(t.price * t.filled_size) END)
+        FILTER (WHERE t.created_at >= NOW() - INTERVAL '7 days') AS pnl_7d,
+      SUM(CASE WHEN t.side = 'SELL' THEN t.price * t.filled_size ELSE -(t.price * t.filled_size) END)
+        FILTER (WHERE t.created_at >= NOW() - INTERVAL '14 days' AND t.created_at < NOW() - INTERVAL '7 days') AS pnl_prev_7d
+    FROM trades t
+    WHERE t.status = 'filled'
+    GROUP BY t.user_id
+  )
+  SELECT
+    ut.user_id,
+    COALESCE(up.wallet_address, '') AS wallet_address,
+    up.username,
+    ROUND(ut.total_pnl, 2) AS total_pnl,
+    ut.win_count,
+    ut.loss_count,
+    ut.total_trades,
+    CASE WHEN ut.total_trades > 0
+      THEN ROUND((ut.win_count::NUMERIC / ut.total_trades) * 100, 1)
+      ELSE 0
+    END AS win_rate,
+    COALESCE(ROUND(rp.pnl_7d, 2), 0) AS pnl_7d,
+    COALESCE(ROUND(rp.pnl_prev_7d, 2), 0) AS pnl_prev_7d,
+    CASE
+      WHEN COALESCE(rp.pnl_7d, 0) > COALESCE(rp.pnl_prev_7d, 0) THEN 'up'
+      WHEN COALESCE(rp.pnl_7d, 0) < COALESCE(rp.pnl_prev_7d, 0) THEN 'down'
+      ELSE 'flat'
+    END AS trend
+  FROM user_trades ut
+  LEFT JOIN user_profiles up ON up.user_id = ut.user_id
+  LEFT JOIN recent_pnl rp ON rp.user_id = ut.user_id
+  ORDER BY ut.total_pnl DESC
+  LIMIT p_limit;
+$$;

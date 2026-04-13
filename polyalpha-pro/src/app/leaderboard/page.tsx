@@ -1,33 +1,36 @@
 "use client";
 
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Trophy, TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
-/*  Mock data — replace with real API when multi-user backend is ready */
+/*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
 interface LeaderboardEntry {
   rank: number;
-  address: string;
+  user_id: string;
+  wallet_address: string;
   username: string | null;
-  pnl: number;
-  winRate: number;
-  totalTrades: number;
+  total_pnl: number;
+  win_rate: number;
+  total_trades: number;
   trend: "up" | "down" | "flat";
 }
 
-const MOCK_DATA: LeaderboardEntry[] = [
-  { rank: 1, address: "0x1a2B3c4D5e6F7890AbCdEf1234567890aBcDeF12", username: "alpha_shark", pnl: 48720.5, winRate: 78, totalTrades: 312, trend: "up" },
-  { rank: 2, address: "0x9f8E7d6C5b4A3210fEdCbA0987654321FeDcBa98", username: "polywhale", pnl: 31450.0, winRate: 72, totalTrades: 245, trend: "up" },
-  { rank: 3, address: "0xAbCdEf1234567890abcdef1234567890AbCdEf12", username: null, pnl: 22180.75, winRate: 69, totalTrades: 189, trend: "down" },
-  { rank: 4, address: "0x1234AbCd5678EfGh9012IjKl3456MnOp7890QrSt", username: "degen_labs", pnl: 15890.3, winRate: 65, totalTrades: 410, trend: "up" },
-  { rank: 5, address: "0xFeDcBa0987654321fEdCbA0987654321FeDcBa98", username: null, pnl: 9340.2, winRate: 61, totalTrades: 156, trend: "flat" },
-  { rank: 6, address: "0x5678EfGh9012AbCd3456IjKl7890MnOp1234QrSt", username: "event_trader", pnl: 5210.0, winRate: 58, totalTrades: 98, trend: "down" },
-  { rank: 7, address: "0xAa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk1Ll2Mm3N", username: "quant_anon", pnl: 2780.45, winRate: 55, totalTrades: 203, trend: "up" },
-  { rank: 8, address: "0x0000111122223333444455556666777788889999", username: null, pnl: -420.0, winRate: 44, totalTrades: 67, trend: "down" },
-  { rank: 9, address: "0xDeAdBeEf00000000DeAdBeEf00000000DeAdBeEf", username: "bag_holder_9", pnl: -1850.6, winRate: 38, totalTrades: 142, trend: "down" },
-  { rank: 10, address: "0xCaFeBaBe11111111CaFeBaBe11111111CaFeBaBe", username: null, pnl: -4320.9, winRate: 31, totalTrades: 88, trend: "down" },
+interface LeaderboardResponse {
+  leaderboard: LeaderboardEntry[];
+  cached: boolean;
+}
+
+type Period = "7d" | "30d" | "all";
+
+const PERIODS: { value: Period; label: string }[] = [
+  { value: "7d", label: "7 Days" },
+  { value: "30d", label: "30 Days" },
+  { value: "all", label: "All Time" },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -66,24 +69,76 @@ const RANK_BG: Record<number, string> = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Skeleton row for loading state                                     */
+/* ------------------------------------------------------------------ */
+
+function SkeletonRow() {
+  return (
+    <div className="grid grid-cols-[40px_1fr_100px_40px] md:grid-cols-[56px_1fr_140px_100px_100px_56px] items-center px-4 py-3 border-b border-border last:border-b-0 animate-pulse">
+      <div className="h-4 w-6 bg-muted rounded" />
+      <div className="space-y-1.5">
+        <div className="h-4 w-24 bg-muted rounded" />
+        <div className="h-3 w-16 bg-muted rounded" />
+      </div>
+      <div className="h-4 w-16 bg-muted rounded ml-auto" />
+      <div className="hidden md:block h-4 w-10 bg-muted rounded ml-auto" />
+      <div className="hidden md:block h-4 w-10 bg-muted rounded ml-auto" />
+      <div className="h-4 w-4 bg-muted rounded mx-auto" />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
 export default function LeaderboardPage() {
   const { user } = useAuth();
   const currentAddress = user?.wallet?.address?.toLowerCase();
+  const [period, setPeriod] = useState<Period>("all");
+
+  const { data, isLoading, error } = useQuery<LeaderboardResponse>({
+    queryKey: ["leaderboard", period],
+    queryFn: async () => {
+      const res = await fetch(`/api/leaderboard?period=${period}&limit=50`);
+      if (!res.ok) throw new Error("Failed to fetch leaderboard");
+      return res.json();
+    },
+    refetchInterval: 5 * 60 * 1000, // match 5-min cache TTL
+  });
+
+  const entries = data?.leaderboard ?? [];
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-4 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <Trophy className="h-5 w-5 text-yellow-400" />
-          Leaderboard
-        </h1>
-        <p className="text-xs text-muted-foreground mt-1">
-          Top traders ranked by total P&amp;L
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Trophy className="h-5 w-5 text-yellow-400" />
+            Leaderboard
+          </h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            Top traders ranked by total P&amp;L
+          </p>
+        </div>
+
+        {/* Period filter */}
+        <div className="flex gap-1 bg-secondary/50 rounded-lg p-0.5">
+          {PERIODS.map((p) => (
+            <button
+              key={p.value}
+              onClick={() => setPeriod(p.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                period === p.value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Table container */}
@@ -98,86 +153,118 @@ export default function LeaderboardPage() {
           <span className="text-center">7d</span>
         </div>
 
+        {/* Loading state */}
+        {isLoading && (
+          <>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonRow key={i} />
+            ))}
+          </>
+        )}
+
+        {/* Error state */}
+        {error && !isLoading && (
+          <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+            Failed to load leaderboard. Try again later.
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoading && !error && entries.length === 0 && (
+          <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+            No trades yet. Start trading to appear on the leaderboard!
+          </div>
+        )}
+
         {/* Rows */}
-        {MOCK_DATA.map((entry) => {
-          const isCurrentUser =
-            !!currentAddress &&
-            entry.address.toLowerCase() === currentAddress;
+        {!isLoading &&
+          entries.map((entry) => {
+            const isCurrentUser =
+              !!currentAddress &&
+              entry.wallet_address.toLowerCase() === currentAddress;
 
-          const isTop3 = entry.rank <= 3;
-          const rowBorder = isTop3 ? RANK_BORDER[entry.rank] : "";
-          const rowBg = isTop3 ? RANK_BG[entry.rank] : "";
-          const highlightBg = isCurrentUser ? "bg-pm-blue/10" : "";
+            const isTop3 = entry.rank <= 3;
+            const rowBorder = isTop3 ? RANK_BORDER[entry.rank] : "";
+            const rowBg = isTop3 ? RANK_BG[entry.rank] : "";
+            const highlightBg = isCurrentUser ? "bg-pm-blue/10" : "";
 
-          return (
-            <div
-              key={entry.rank}
-              className={`grid grid-cols-[40px_1fr_100px_40px] md:grid-cols-[56px_1fr_140px_100px_100px_56px] items-center px-4 py-3 text-sm transition-colors hover:bg-secondary/40 border-b border-border last:border-b-0 ${rowBorder} ${rowBg} ${highlightBg}`}
-            >
-              {/* Rank */}
-              <span
-                className={`font-bold tabular-nums ${RANK_ACCENT[entry.rank] ?? "text-muted-foreground"}`}
+            return (
+              <div
+                key={entry.user_id}
+                className={`grid grid-cols-[40px_1fr_100px_40px] md:grid-cols-[56px_1fr_140px_100px_100px_56px] items-center px-4 py-3 text-sm transition-colors hover:bg-secondary/40 border-b border-border last:border-b-0 ${rowBorder} ${rowBg} ${highlightBg}`}
               >
-                {entry.rank}
-              </span>
-
-              {/* Trader */}
-              <div className="min-w-0">
-                <span className="font-medium truncate block">
-                  {entry.username ?? truncateAddress(entry.address)}
+                {/* Rank */}
+                <span
+                  className={`font-bold tabular-nums ${RANK_ACCENT[entry.rank] ?? "text-muted-foreground"}`}
+                >
+                  {entry.rank}
                 </span>
-                {entry.username && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {truncateAddress(entry.address)}
+
+                {/* Trader */}
+                <div className="min-w-0">
+                  <span className="font-medium truncate block">
+                    {entry.username ?? truncateAddress(entry.wallet_address)}
                   </span>
-                )}
-                {isCurrentUser && (
-                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-pm-blue/20 text-pm-blue font-medium">
-                    You
-                  </span>
-                )}
+                  {entry.username && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {truncateAddress(entry.wallet_address)}
+                    </span>
+                  )}
+                  {isCurrentUser && (
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-pm-blue/20 text-pm-blue font-medium">
+                      You
+                    </span>
+                  )}
+                </div>
+
+                {/* P&L */}
+                <span
+                  className={`text-right font-bold tabular-nums ${
+                    entry.total_pnl >= 0 ? "text-pm-green" : "text-pm-red"
+                  }`}
+                >
+                  {formatPnl(entry.total_pnl)}
+                </span>
+
+                {/* Win Rate */}
+                <span className="hidden md:block text-right tabular-nums text-muted-foreground">
+                  {entry.win_rate}%
+                </span>
+
+                {/* Total Trades */}
+                <span className="hidden md:block text-right tabular-nums text-muted-foreground">
+                  {Number(entry.total_trades).toLocaleString()}
+                </span>
+
+                {/* Trend */}
+                <span className="flex justify-center">
+                  {entry.trend === "up" && (
+                    <TrendingUp className="h-4 w-4 text-pm-green" />
+                  )}
+                  {entry.trend === "down" && (
+                    <TrendingDown className="h-4 w-4 text-pm-red" />
+                  )}
+                  {entry.trend === "flat" && (
+                    <Minus className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </span>
               </div>
-
-              {/* P&L */}
-              <span
-                className={`text-right font-bold tabular-nums ${
-                  entry.pnl >= 0 ? "text-pm-green" : "text-pm-red"
-                }`}
-              >
-                {formatPnl(entry.pnl)}
-              </span>
-
-              {/* Win Rate */}
-              <span className="hidden md:block text-right tabular-nums text-muted-foreground">
-                {entry.winRate}%
-              </span>
-
-              {/* Total Trades */}
-              <span className="hidden md:block text-right tabular-nums text-muted-foreground">
-                {entry.totalTrades.toLocaleString()}
-              </span>
-
-              {/* Trend */}
-              <span className="flex justify-center">
-                {entry.trend === "up" && (
-                  <TrendingUp className="h-4 w-4 text-pm-green" />
-                )}
-                {entry.trend === "down" && (
-                  <TrendingDown className="h-4 w-4 text-pm-red" />
-                )}
-                {entry.trend === "flat" && (
-                  <Minus className="h-4 w-4 text-muted-foreground" />
-                )}
-              </span>
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
 
-      {/* Footer note */}
-      <p className="text-[11px] text-muted-foreground text-center">
-        Showing mock data. Live rankings will appear once the multi-user API is connected.
-      </p>
+      {/* Footer */}
+      {isLoading && (
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Loading rankings...
+        </div>
+      )}
+      {data?.cached && (
+        <p className="text-[11px] text-muted-foreground text-center">
+          Rankings refresh every 5 minutes
+        </p>
+      )}
     </div>
   );
 }
