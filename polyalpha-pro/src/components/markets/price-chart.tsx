@@ -125,7 +125,7 @@ export function PriceChart({ probability, conditionId, tokenId }: PriceChartProp
           ))}
         </div>
       </div>
-      <div className="p-4" style={{ height: 220 }}>
+      <div className="p-4" style={{ height: 320 }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data}>
             <defs>

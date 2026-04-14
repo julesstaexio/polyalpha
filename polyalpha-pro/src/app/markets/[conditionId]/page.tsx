@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Image from "next/image";
 import { useMarket } from "@/hooks/use-markets";
 import { AIAnalysisPanel } from "@/components/markets/ai-analysis-panel";
@@ -10,7 +10,18 @@ import { DeriveKeys } from "@/components/trading/derive-keys";
 import { OrderbookDisplay } from "@/components/markets/orderbook-display";
 import { PriceChart } from "@/components/markets/price-chart";
 import { CommentsSection } from "@/components/markets/comments-section";
-import { ExternalLink, Loader2, Star, Clock } from "lucide-react";
+import {
+  ExternalLink,
+  Loader2,
+  Star,
+  Clock,
+  BarChart3,
+  Brain,
+  BookOpen,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { useFavorites } from "@/hooks/use-favorites";
@@ -20,6 +31,14 @@ function formatVolume(v: number): string {
   if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
   return `$${v.toFixed(0)}`;
 }
+
+type Tab = "analysis" | "orderbook" | "comments";
+
+const TABS: { value: Tab; label: string; icon: typeof Brain }[] = [
+  { value: "analysis", label: "AI Analysis", icon: Brain },
+  { value: "orderbook", label: "Orderbook", icon: BarChart3 },
+  { value: "comments", label: "Comments", icon: MessageSquare },
+];
 
 export default function MarketDetailPage({
   params,
@@ -31,9 +50,11 @@ export default function MarketDetailPage({
   const { user } = useAuth();
   const userId = user?.id;
   const { isFavorite, toggle } = useFavorites();
-  // Use the real conditionId from market data for favorites (slugOrId may be a slug)
   const realConditionId = data?.market?.conditionId || slugOrId;
   const starred = isFavorite(realConditionId);
+
+  const [activeTab, setActiveTab] = useState<Tab>("analysis");
+  const [showFunds, setShowFunds] = useState(false);
 
   if (isLoading) {
     return (
@@ -74,9 +95,17 @@ export default function MarketDetailPage({
   }`;
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 py-4 space-y-6">
+    <div className="max-w-[1400px] mx-auto px-4 py-4">
+      {/* Back link */}
+      <Link
+        href="/"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-4 transition-colors"
+      >
+        &larr; Back to markets
+      </Link>
+
       {/* Market header */}
-      <div className="space-y-4">
+      <div className="space-y-4 mb-6">
         <div className="flex items-start gap-4">
           {imgSrc ? (
             <Image
@@ -138,7 +167,9 @@ export default function MarketDetailPage({
         {/* Big outcome buttons */}
         <div className="flex items-center gap-3">
           <button className="flex-1 flex items-center justify-between h-12 px-5 rounded-[7px] bg-pm-green/15 hover:bg-pm-green/25 transition-colors">
-            <span className="text-sm font-semibold text-pm-green">Buy Yes</span>
+            <span className="text-sm font-semibold text-pm-green">
+              Buy Yes
+            </span>
             <span className="text-2xl font-bold text-pm-green tabular-nums">
               {yesPct}¢
             </span>
@@ -152,34 +183,104 @@ export default function MarketDetailPage({
         </div>
       </div>
 
-      {/* Price chart — pass tokenId for real history */}
-      <PriceChart probability={prob} conditionId={realConditionId} tokenId={yesTokenId} />
-
-      {/* 4-column layout: AI / Orderbook / Trade / Funds */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-3">
-          <AIAnalysisPanel conditionId={realConditionId} userId={userId} />
-        </div>
-        <div className="lg:col-span-3">
-          <OrderbookDisplay orderbook={orderbook} />
-        </div>
-        <div className="lg:col-span-3 space-y-4">
-          <DeriveKeys />
-          <OrderForm
+      {/* Two-column layout: Main content + Trading sidebar */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* ── Left column: chart + tabbed content ── */}
+        <div className="lg:col-span-8 space-y-4">
+          {/* Price chart */}
+          <PriceChart
+            probability={prob}
+            conditionId={realConditionId}
             tokenId={yesTokenId}
-            marketId={market.id}
-            marketQuestion={market.question}
-            currentPrice={prob}
-            userId={userId}
           />
+
+          {/* Tabbed section */}
+          <div className="border border-border rounded-[11px] bg-card overflow-hidden">
+            {/* Tab bar */}
+            <div className="flex border-b border-border">
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    onClick={() => setActiveTab(tab.value)}
+                    className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-colors relative ${
+                      isActive
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {tab.label}
+                    {isActive && (
+                      <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-foreground" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tab content */}
+            <div className="p-4">
+              {activeTab === "analysis" && (
+                <AIAnalysisPanel
+                  conditionId={realConditionId}
+                  userId={userId}
+                  bare
+                />
+              )}
+              {activeTab === "orderbook" && (
+                <OrderbookDisplay orderbook={orderbook} bare />
+              )}
+              {activeTab === "comments" && (
+                <CommentsSection
+                  conditionId={realConditionId}
+                  marketId={market.id}
+                  bare
+                />
+              )}
+            </div>
+          </div>
         </div>
-        <div className="lg:col-span-3">
-          <DepositWithdraw />
+
+        {/* ── Right column: sticky trading sidebar ── */}
+        <div className="lg:col-span-4">
+          <div className="lg:sticky lg:top-4 space-y-4">
+            <DeriveKeys />
+            <OrderForm
+              tokenId={yesTokenId}
+              marketId={market.id}
+              marketQuestion={market.question}
+              currentPrice={prob}
+              userId={userId}
+            />
+
+            {/* Collapsible funds section */}
+            <div className="border border-border rounded-[11px] bg-card overflow-hidden">
+              <button
+                onClick={() => setShowFunds(!showFunds)}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold hover:bg-secondary/40 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <BookOpen className="h-4 w-4" />
+                  Funds
+                </span>
+                {showFunds ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </button>
+              {showFunds && (
+                <div className="border-t border-border">
+                  <DepositWithdraw />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* Comments */}
-      <CommentsSection conditionId={realConditionId} marketId={market.id} />
     </div>
   );
 }
